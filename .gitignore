@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenv
+.venv/
+venv/
+ENV/
+env/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+
+# App runtime/generated assets
+uploads/
+outputs/
+previews/
+
+# Local test assets (optional)
+test/
+

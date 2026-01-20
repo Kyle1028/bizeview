@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>選擇隱私處理方式</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 32px; color: #1c1c1c; background: #f5f6f8; }
+      .card { border: none; border-radius: 0; padding: 20px; max-width: 900px; background: #ffffff; }
+      .row { margin: 12px 0; }
+      img { max-width: 100%; border: none; border-radius: 0; }
+      button { padding: 8px 16px; background: #1f6feb; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; }
+      button:hover { background: #1b5fd1; }
+      .hint { color: #666; font-size: 14px; }
+      .preview-title { margin-bottom: 8px; }
+      label { display: block; color: #1c1c1c; }
+      input[type="radio"] { margin-right: 6px; }
+      .face-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+      .face-item { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e5e5e5; padding: 6px; }
+      .face-item img { width: 80px; height: 80px; object-fit: cover; }
+      .back-link { color: #1f6feb; text-decoration: none; }
+      .back-link:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>人臉標註預覽</h2>
+      <div class="row">
+        <div class="preview-title">偵測結果</div>
+        <img src="{{ preview_url }}" alt="face preview" />
+      </div>
+      <form action="/process" method="post" enctype="multipart/form-data" id="process-form">
+        <input type="hidden" name="media_id" value="{{ media_id }}" />
+        <div class="row">
+          <div class="preview-title">選擇要處理的人臉</div>
+          {% if faces and faces|length > 0 %}
+            <div class="face-grid">
+              {% for face in faces %}
+                <label class="face-item">
+                  <input type="checkbox" name="face_ids" value="{{ face.id }}" checked />
+                  <img src="{{ url_for('previews', filename=face.file) }}" alt="face {{ face.id }}" />
+                </label>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="hint">沒有偵測到人臉，將套用在整張圖/影片上。</div>
+            <div class="row">
+              <a href="/" class="back-link">返回上傳</a>
+            </div>
+          {% endif %}
+        </div>
+        <div class="row">
+          <label><input type="radio" name="mode" value="mosaic" checked /> 馬賽克整張人臉</label>
+        </div>
+        <div class="row">
+          <label><input type="radio" name="mode" value="eyes" /> 遮眼處理</label>
+        </div>
+        <div class="row">
+          <label><input type="radio" name="mode" value="replace" /> 上傳圖片人臉替換</label>
+        </div>
+        <div class="row" id="overlay-row" style="display: none;">
+          <input type="file" name="overlay" accept="image/*" />
+        </div>
+        <div class="row">
+          <button type="submit">開始處理{{ "影片" if is_video else "照片" }}</button>
+        </div>
+      </form>
+    </div>
+    <script>
+      const form = document.getElementById("process-form");
+      const overlayRow = document.getElementById("overlay-row");
+      const radios = form.querySelectorAll('input[name="mode"]');
+      const toggleOverlay = () => {
+        const selected = form.querySelector('input[name="mode"]:checked');
+        overlayRow.style.display = selected && selected.value === "replace" ? "block" : "none";
+      };
+      radios.forEach((radio) => radio.addEventListener("change", toggleOverlay));
+      toggleOverlay();
+    </script>
+  </body>
+</html>

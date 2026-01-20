@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>處理完成</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 32px; color: #1c1c1c; background: #f5f6f8; }
+      .card { border: none; border-radius: 0; padding: 20px; max-width: 900px; background: #ffffff; }
+      .row { margin: 12px 0; }
+      img, video { max-width: 100%; border: none; border-radius: 0; }
+      a { color: #1f6feb; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>處理完成</h2>
+      <div class="row">
+        {% if is_video %}
+          <video controls src="{{ result_url }}"></video>
+        {% else %}
+          <img src="{{ result_url }}" alt="result" />
+        {% endif %}
+      </div>
+      <div class="row">
+        <a href="/">返回上傳</a>
+      </div>
+    </div>
+  </body>
+</html>

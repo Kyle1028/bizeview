@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>人臉隱私處理</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 32px; color: #1c1c1c; background: #f5f6f8; }
+      .card { border: none; border-radius: 0; padding: 20px; max-width: 720px; background: #ffffff; }
+      .row { margin: 12px 0; }
+      button { padding: 8px 16px; background: #1f6feb; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; }
+      button:hover { background: #1b5fd1; }
+      .hint { color: #666; font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>上傳照片 / 影片</h2>
+      <form action="/upload" method="post" enctype="multipart/form-data">
+        <div class="row">
+          <input type="file" name="media" accept="image/*,video/*" required />
+        </div>
+        <div class="row">
+          <button type="submit">上傳並偵測人臉</button>
+        </div>
+        <div class="row hint">
+          影像：JPG / PNG / WEBP；影片：MP4 / WEBM / MOV
+        </div>
+      </form>
+    </div>
+  </body>
+</html>
