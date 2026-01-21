@@ -20,6 +20,9 @@ Thumbs.db
 *.swp
 .vscode/
 
+# Windows batch files
+*.bat
+
 # App runtime/generated assets
 uploads/
 outputs/

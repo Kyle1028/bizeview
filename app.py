@@ -36,7 +36,6 @@ for d in (UPLOAD_IMAGE_DIR, UPLOAD_VIDEO_DIR, OUTPUT_IMAGE_DIR, OUTPUT_VIDEO_DIR
 app = Flask(__name__)
 
 # 資料庫設定 - MySQL
-# 從環境變數讀取，格式：mysql+pymysql://user:password@localhost:3306/photobluuring
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError(
@@ -48,14 +47,13 @@ app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_pre_ping": True,  # 自動檢查連線
-    "pool_recycle": 3600,   # 每小時回收連線
+    "pool_recycle": 3600,  
 }
 db = SQLAlchemy(app)
 
 
-# 資料庫模型
+# 資料庫
 class Media(db.Model):
-    """媒體檔案記錄"""
     __tablename__ = "media"
     
     id = db.Column(db.Integer, primary_key=True)
