@@ -39,34 +39,51 @@
       }
       .face-box {
         position: absolute;
-        border: 3px solid;
         cursor: pointer;
         pointer-events: auto;
         transition: all 0.2s ease;
         box-sizing: border-box;
       }
       .face-box.selected {
-        border-color: #28a745;
-        background-color: rgba(40, 167, 69, 0.15);
+        border: 4px solid #0d6efd;
+        background-color: rgba(13, 110, 253, 0.1);
       }
       .face-box.unselected {
-        border-color: #dc3545;
-        background-color: rgba(220, 53, 69, 0.1);
+        border: 3px dashed #6c757d;
+        background-color: rgba(108, 117, 125, 0.05);
       }
       .face-box:hover {
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.4);
         transform: scale(1.02);
       }
       .face-number {
         position: absolute;
         top: -3px;
         left: -3px;
-        background: rgba(0, 0, 0, 0.7);
+        background: rgba(0, 0, 0, 0.8);
         color: white;
-        padding: 2px 6px;
-        font-size: 12px;
+        padding: 3px 8px;
+        font-size: 13px;
         font-weight: bold;
         border-radius: 3px 0 3px 0;
+      }
+      .face-status {
+        position: absolute;
+        top: -3px;
+        right: -3px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 4px 8px;
+        font-size: 16px;
+        font-weight: bold;
+        border-radius: 0 3px 0 3px;
+        line-height: 1;
+      }
+      .face-status.selected {
+        background: #0d6efd;
+      }
+      .face-status.unselected {
+        background: #6c757d;
       }
       
       /* Loading Overlay */
@@ -114,8 +131,8 @@
       <div class="row">
         <div class="preview-title">偵測結果（點擊人臉框來選擇/取消選擇）</div>
         {% if faces and faces|length > 0 %}
-          <div class="hint" style="color: #28a745; margin-bottom: 12px;">
-            綠色框 = 已選擇處理 | 紅色框 = 未選擇 | 點擊框可切換狀態
+          <div class="hint" style="margin-bottom: 12px;">
+            <strong>藍色實線框 ✓</strong> = 已選擇處理 | <strong style="opacity: 0.6;">灰色虛線框 ✕</strong> = 未選擇 | 點擊框可切換狀態
           </div>
           <div class="image-container" id="image-container">
             <img src="{{ preview_url }}" alt="face preview" id="preview-image" />
@@ -234,12 +251,26 @@
             label.textContent = "#" + (face.id + 1);
             box.appendChild(label);
             
+            // 添加狀態圖標（打勾/打叉）
+            const statusIcon = document.createElement("div");
+            statusIcon.className = "face-status selected";
+            statusIcon.textContent = "✓";
+            box.appendChild(statusIcon);
+            
             // 點擊事件：切換選中狀態
             box.addEventListener("click", () => {
               const checkbox = document.getElementById("face-checkbox-" + face.id);
               if (checkbox) {
                 checkbox.checked = !checkbox.checked;
-                box.className = checkbox.checked ? "face-box selected" : "face-box unselected";
+                if (checkbox.checked) {
+                  box.className = "face-box selected";
+                  statusIcon.className = "face-status selected";
+                  statusIcon.textContent = "✓";
+                } else {
+                  box.className = "face-box unselected";
+                  statusIcon.className = "face-status unselected";
+                  statusIcon.textContent = "✕";
+                }
               }
             });
             
