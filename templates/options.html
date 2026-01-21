@@ -15,11 +15,60 @@
       .preview-title { margin-bottom: 8px; }
       label { display: block; color: #1c1c1c; }
       input[type="radio"] { margin-right: 6px; }
-      .face-grid { display: flex; flex-wrap: wrap; gap: 12px; }
-      .face-item { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e5e5e5; padding: 6px; }
-      .face-item img { width: 80px; height: 80px; object-fit: cover; }
       .back-link { color: #1f6feb; text-decoration: none; }
       .back-link:hover { text-decoration: underline; }
+      
+      /* 圖片與人臉框容器 */
+      .image-container {
+        position: relative;
+        display: inline-block;
+        max-width: 100%;
+      }
+      .image-container img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+      .face-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      .face-box {
+        position: absolute;
+        border: 3px solid;
+        cursor: pointer;
+        pointer-events: auto;
+        transition: all 0.2s ease;
+        box-sizing: border-box;
+      }
+      .face-box.selected {
+        border-color: #28a745;
+        background-color: rgba(40, 167, 69, 0.15);
+      }
+      .face-box.unselected {
+        border-color: #dc3545;
+        background-color: rgba(220, 53, 69, 0.1);
+      }
+      .face-box:hover {
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+        transform: scale(1.02);
+      }
+      .face-number {
+        position: absolute;
+        top: -3px;
+        left: -3px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 2px 6px;
+        font-size: 12px;
+        font-weight: bold;
+        border-radius: 3px 0 3px 0;
+      }
+      
       /* Loading Overlay */
       .loading-overlay {
         display: none;
@@ -63,21 +112,28 @@
     <div class="card">
       <h2>人臉標註預覽</h2>
       <div class="row">
-        <div class="preview-title">偵測結果</div>
-        <img src="{{ preview_url }}" alt="face preview" />
+        <div class="preview-title">偵測結果（點擊人臉框來選擇/取消選擇）</div>
+        {% if faces and faces|length > 0 %}
+          <div class="hint" style="color: #28a745; margin-bottom: 12px;">
+            綠色框 = 已選擇處理 | 紅色框 = 未選擇 | 點擊框可切換狀態
+          </div>
+          <div class="image-container" id="image-container">
+            <img src="{{ preview_url }}" alt="face preview" id="preview-image" />
+            <div class="face-overlay" id="face-overlay"></div>
+          </div>
+        {% else %}
+          <img src="{{ preview_url }}" alt="face preview" />
+        {% endif %}
       </div>
       <form action="/process" method="post" enctype="multipart/form-data" id="process-form">
         <input type="hidden" name="media_id" value="{{ media_id }}" />
         <input type="hidden" name="is_video" value="{{ 'true' if is_video else 'false' }}" id="is-video" />
         <div class="row">
-          <div class="preview-title">選擇要處理的人臉</div>
           {% if faces and faces|length > 0 %}
-            <div class="face-grid">
+            <!-- 隱藏的 checkbox 用於提交表單 -->
+            <div style="display: none;" id="hidden-checkboxes">
               {% for face in faces %}
-                <label class="face-item">
-                  <input type="checkbox" name="face_ids" value="{{ face.id }}" checked />
-                  <img src="{{ url_for('previews', filename=face.file) }}" alt="face {{ face.id }}" />
-                </label>
+                <input type="checkbox" name="face_ids" value="{{ face.id }}" checked id="face-checkbox-{{ face.id }}" />
               {% endfor %}
             </div>
           {% else %}
@@ -127,6 +183,73 @@
         }
         loadingOverlay.classList.add("active");
       });
+
+      // 人臉框交互功能
+      const facesData = {{ faces|tojson|safe }};
+      const previewImage = document.getElementById("preview-image");
+      const faceOverlay = document.getElementById("face-overlay");
+      
+      if (facesData && facesData.length > 0 && previewImage && faceOverlay) {
+        // 等待圖片載入完成
+        previewImage.addEventListener("load", initializeFaceBoxes);
+        
+        // 如果圖片已經載入，直接初始化
+        if (previewImage.complete) {
+          initializeFaceBoxes();
+        }
+        
+        function initializeFaceBoxes() {
+          const imgWidth = previewImage.offsetWidth;
+          const imgHeight = previewImage.offsetHeight;
+          const naturalWidth = previewImage.naturalWidth;
+          const naturalHeight = previewImage.naturalHeight;
+          
+          // 計算縮放比例
+          const scaleX = imgWidth / naturalWidth;
+          const scaleY = imgHeight / naturalHeight;
+          
+          // 清空現有的框
+          faceOverlay.innerHTML = "";
+          
+          // 為每個人臉創建可點擊的框
+          facesData.forEach((face) => {
+            const box = document.createElement("div");
+            box.className = "face-box selected";
+            box.dataset.faceId = face.id;
+            
+            // 根據縮放比例調整位置和大小
+            const x = face.x * scaleX;
+            const y = face.y * scaleY;
+            const w = face.w * scaleX;
+            const h = face.h * scaleY;
+            
+            box.style.left = x + "px";
+            box.style.top = y + "px";
+            box.style.width = w + "px";
+            box.style.height = h + "px";
+            
+            // 添加人臉編號標籤
+            const label = document.createElement("div");
+            label.className = "face-number";
+            label.textContent = "#" + (face.id + 1);
+            box.appendChild(label);
+            
+            // 點擊事件：切換選中狀態
+            box.addEventListener("click", () => {
+              const checkbox = document.getElementById("face-checkbox-" + face.id);
+              if (checkbox) {
+                checkbox.checked = !checkbox.checked;
+                box.className = checkbox.checked ? "face-box selected" : "face-box unselected";
+              }
+            });
+            
+            faceOverlay.appendChild(box);
+          });
+        }
+        
+        // 視窗大小改變時重新計算框的位置
+        window.addEventListener("resize", initializeFaceBoxes);
+      }
     </script>
   </body>
 </html>
