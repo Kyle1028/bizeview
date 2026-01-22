@@ -218,6 +218,13 @@ def _sort_faces(faces):
 
 
 def _smooth_faces(prev_faces, curr_faces, alpha=0.7):
+    """自適應平滑人臉邊界框
+    
+    根據移動速度動態調整平滑係數：
+    - 快速移動：低平滑（alpha=0.2），快速跟隨
+    - 中速移動：中度平滑（alpha=0.4）
+    - 慢速移動：高平滑（alpha=0.7），減少抖動
+    """
     if curr_faces is None or len(curr_faces) == 0:
         return prev_faces
     if prev_faces is None or len(prev_faces) == 0:
@@ -226,13 +233,31 @@ def _smooth_faces(prev_faces, curr_faces, alpha=0.7):
     curr_faces = _sort_faces(curr_faces)
     if len(prev_faces) != len(curr_faces):
         return curr_faces
+    
     smoothed = []
     for (px, py, pw, ph), (cx, cy, cw, ch) in zip(prev_faces, curr_faces):
-        sx = int(round(alpha * px + (1 - alpha) * cx))
-        sy = int(round(alpha * py + (1 - alpha) * cy))
-        sw = int(round(alpha * pw + (1 - alpha) * cw))
-        sh = int(round(alpha * ph + (1 - alpha) * ch))
+        # 計算移動距離（歸一化到人臉大小）
+        face_size = max(pw, ph)
+        if face_size == 0:
+            face_size = 1
+        dx = abs(cx - px) / face_size
+        dy = abs(cy - py) / face_size
+        movement = (dx**2 + dy**2) ** 0.5
+        
+        # 自適應平滑係數
+        if movement > 0.3:  # 快速移動（超過臉部尺寸的30%）
+            adaptive_alpha = 0.2  # 降低延遲，快速跟隨
+        elif movement > 0.1:  # 中速移動
+            adaptive_alpha = 0.4
+        else:  # 慢速移動或靜止
+            adaptive_alpha = 0.7  # 高平滑，減少抖動
+        
+        sx = int(round(adaptive_alpha * px + (1 - adaptive_alpha) * cx))
+        sy = int(round(adaptive_alpha * py + (1 - adaptive_alpha) * cy))
+        sw = int(round(adaptive_alpha * pw + (1 - adaptive_alpha) * cw))
+        sh = int(round(adaptive_alpha * ph + (1 - adaptive_alpha) * ch))
         smoothed.append((sx, sy, sw, sh))
+    
     return np.array(smoothed)
 
 
@@ -348,24 +373,44 @@ def apply_mosaic(image_bgr: np.ndarray, faces, block_size=12):
 
 
 def _adaptive_alpha(prev_boxes, curr_boxes, base=0.5, min_alpha=0.2):
+    """自適應平滑係數（眼睛遮罩專用）
+    
+    根據眼部區域的相對移動距離動態調整：
+    - 快速移動：返回最小 alpha（快速跟隨）
+    - 中速移動：返回中等 alpha
+    - 慢速移動：返回基礎 alpha（平滑效果）
+    """
     if not prev_boxes or not curr_boxes:
         return base
     prev_boxes = sorted(prev_boxes, key=lambda b: (b[0], b[1]))
     curr_boxes = sorted(curr_boxes, key=lambda b: (b[0], b[1]))
     if len(prev_boxes) != len(curr_boxes):
         return base
-    max_move = 0
+    
+    max_relative_move = 0
     for (px1, py1, px2, py2), (cx1, cy1, cx2, cy2) in zip(prev_boxes, curr_boxes):
+        # 計算眼部區域大小
+        box_width = max(px2 - px1, cx2 - cx1, 1)
+        box_height = max(py2 - py1, cy2 - cy1, 1)
+        box_size = (box_width + box_height) / 2.0
+        
+        # 計算中心點移動距離
         pcx = (px1 + px2) / 2.0
         pcy = (py1 + py2) / 2.0
         ccx = (cx1 + cx2) / 2.0
         ccy = (cy1 + cy2) / 2.0
-        max_move = max(max_move, abs(ccx - pcx) + abs(ccy - pcy))
-    if max_move > 30:
-        return min_alpha
-    if max_move > 12:
+        move_dist = ((ccx - pcx)**2 + (ccy - pcy)**2) ** 0.5
+        
+        # 歸一化到區域大小（相對移動）
+        relative_move = move_dist / box_size
+        max_relative_move = max(max_relative_move, relative_move)
+    
+    # 自適應閾值（基於相對移動）
+    if max_relative_move > 0.4:  # 快速移動（超過40%區域大小）
+        return min_alpha  # 0.2，快速跟隨
+    if max_relative_move > 0.15:  # 中速移動
         return 0.3
-    return base
+    return base  # 慢速或靜止，平滑效果
 
 
 def _smooth_boxes(prev_boxes, curr_boxes, alpha=0.5):
@@ -438,8 +483,8 @@ def apply_eye_cover(
         center_x = int((lx + rx) / 2)
         center_y = int((ly + ry) / 2)
         eye_dist = max(12, int(((rx - lx) ** 2 + (ry - ly) ** 2) ** 0.5))
-        band_w = int(eye_dist * 1.8)
-        band_h = int(eye_dist * 0.55)
+        band_w = int(eye_dist * 2.4)  # 增加寬度：1.8 → 2.4
+        band_h = int(eye_dist * 0.75)  # 增加高度：0.55 → 0.75
         cover_x1 = max(0, center_x - band_w // 2)
         cover_x2 = min(w_img, center_x + band_w // 2)
         cover_y1 = max(0, center_y - band_h // 2)
