@@ -75,8 +75,9 @@ with app.app_context():
 FACE_CASCADE = None
 EYE_CASCADE = None
 
-FACE_LANDMARKER_IMAGE = None
-if MP_AVAILABLE:
+def _create_face_landmarker_image(min_detection_confidence=0.5):
+    if not MP_AVAILABLE:
+        return None
     try:
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         model_path = MODEL_DIR / "face_landmarker.task"
@@ -92,14 +93,20 @@ if MP_AVAILABLE:
         options_image = mp_vision.FaceLandmarkerOptions(
             base_options=base_options,
             num_faces=5,
+            min_face_detection_confidence=min_detection_confidence,
+            min_face_presence_confidence=min_detection_confidence,
             running_mode=mp_vision.RunningMode.IMAGE,
         )
-        FACE_LANDMARKER_IMAGE = mp_vision.FaceLandmarker.create_from_options(options_image)
+        return mp_vision.FaceLandmarker.create_from_options(options_image)
     except Exception:
-        FACE_LANDMARKER_IMAGE = None
+        return None
 
 
-def _create_face_landmarker_video():
+# 創建預設的人臉偵測器
+FACE_LANDMARKER_IMAGE = _create_face_landmarker_image(0.5) if MP_AVAILABLE else None
+
+
+def _create_face_landmarker_video(min_detection_confidence=0.5):
     if not MP_AVAILABLE:
         return None
     try:
@@ -110,6 +117,8 @@ def _create_face_landmarker_video():
         options_video = mp_vision.FaceLandmarkerOptions(
             base_options=base_options,
             num_faces=5,
+            min_face_detection_confidence=min_detection_confidence,
+            min_face_presence_confidence=min_detection_confidence,
             running_mode=mp_vision.RunningMode.VIDEO,
         )
         return mp_vision.FaceLandmarker.create_from_options(options_video)
@@ -485,6 +494,14 @@ def upload():
     file = request.files.get("media")
     if not file or not file.filename:
         abort(400, "未提供檔案")
+    
+    # 讀取靈敏度參數（預設 0.5）
+    try:
+        sensitivity = float(request.form.get("sensitivity", 0.5))
+        sensitivity = max(0.3, min(0.9, sensitivity))  # 限制範圍在 0.3-0.9
+    except:
+        sensitivity = 0.5
+    
     original_filename = file.filename
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_IMAGE_EXT and ext not in ALLOWED_VIDEO_EXT:
@@ -501,7 +518,9 @@ def upload():
 
     if _is_image(saved_path):
         image = cv2.imread(str(saved_path))
-        _, faces = _detect_landmarks_bgr(image, FACE_LANDMARKER_IMAGE, None)
+        # 使用自訂靈敏度創建偵測器
+        face_detector = _create_face_landmarker_image(sensitivity)
+        _, faces = _detect_landmarks_bgr(image, face_detector, None)
         faces_info = _save_faces_metadata(image, faces, media_id)
         preview = draw_face_boxes(image, faces)
         preview_path = _save_preview(preview, media_id)
@@ -531,7 +550,9 @@ def upload():
     cap.release()
     if not ok:
         abort(400, "無法讀取影片")
-    _, faces = _detect_landmarks_bgr(frame, FACE_LANDMARKER_IMAGE, None)
+    # 使用自訂靈敏度創建偵測器
+    face_detector = _create_face_landmarker_image(sensitivity)
+    _, faces = _detect_landmarks_bgr(frame, face_detector, None)
     faces_info = _save_faces_metadata(frame, faces, media_id)
     preview = draw_face_boxes(frame, faces)
     preview_path = _save_preview(preview, media_id)
