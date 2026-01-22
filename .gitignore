@@ -20,6 +20,19 @@ Thumbs.db
 *.swp
 .vscode/
 
+# 雲端硬碟同步檔案
+.tmp.driveupload/
+.tmp.drivedownload/
+desktop.ini
+.dropbox
+.dropbox.attr
+~$*
+*.tmp
+.sync/
+.syncthing/
+*conflicted copy*
+*conflict*
+
 # Windows batch files
 *.bat
 
