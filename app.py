@@ -1,3 +1,7 @@
+"""
+整合認證系統的主程式
+這是一個新的主程式檔案，整合了登入註冊功能
+"""
 import json
 import os
 import uuid
@@ -6,8 +10,12 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from flask import Flask, render_template, request, send_from_directory, abort, url_for
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, render_template, request, send_from_directory, abort, url_for, redirect
+from flask_login import login_required, current_user
+
+# 導入認證系統
+from auth import init_auth
+from models import db, Media
 
 try:
     import mediapipe as mp
@@ -46,31 +54,18 @@ if not DATABASE_URL:
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_pre_ping": True,  # 自動檢查連線
-    "pool_recycle": 3600,  
+    "pool_pre_ping": True,
+    "pool_recycle": 3600,
 }
-db = SQLAlchemy(app)
 
+# Session 密鑰（請在生產環境中使用環境變數設定）
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-please-change-in-production")
 
-# 資料庫
-class Media(db.Model):
-    __tablename__ = "media"
-    
-    id = db.Column(db.Integer, primary_key=True)
-    media_id = db.Column(db.String(50), unique=True, nullable=False, index=True)
-    original_filename = db.Column(db.String(255))  # 原始檔名
-    file_type = db.Column(db.String(10), nullable=False)  # image / video
-    upload_path = db.Column(db.String(500))  # 上傳檔案路徑
-    output_path = db.Column(db.String(500))  # 處理後檔案路徑
-    process_mode = db.Column(db.String(20))  # mosaic / eyes / replace
-    face_count = db.Column(db.Integer, default=0)  # 偵測到的人臉數量
-    status = db.Column(db.String(20), default="uploaded")  # uploaded / processed
-    created_at = db.Column(db.DateTime, default=datetime.now)
-    processed_at = db.Column(db.DateTime)
-    
-    def __repr__(self):
-        return f"<Media {self.media_id}>"
+# 初始化資料庫
+db.init_app(app)
 
+# 初始化認證系統
+init_auth(app)
 
 # 建立資料表
 with app.app_context():
@@ -98,14 +93,12 @@ if MP_AVAILABLE:
             num_faces=5,
             running_mode=mp_vision.RunningMode.IMAGE,
         )
-        # 建立 IMAGE 模式
         FACE_LANDMARKER_IMAGE = mp_vision.FaceLandmarker.create_from_options(options_image)
     except Exception:
         FACE_LANDMARKER_IMAGE = None
 
 
 def _create_face_landmarker_video():
-    # 每次處理影片建立新的 VIDEO landmarker，避免時間戳錯誤
     if not MP_AVAILABLE:
         return None
     try:
@@ -146,7 +139,6 @@ def _detect_landmarks_bgr(
     landmarker,
     timestamp_ms: int | None = None,
 ):
-    # 回傳landmarks + 人臉框
     if landmarker is None:
         return [], np.array([])
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
@@ -179,7 +171,6 @@ def _detect_landmarks_bgr(
 
 
 def detect_faces_bgr(image_bgr: np.ndarray):
-    # 取得人臉框
     if FACE_LANDMARKER_IMAGE is None:
         return np.array([])
     _, boxes = _detect_landmarks_bgr(image_bgr, FACE_LANDMARKER_IMAGE, timestamp_ms=None)
@@ -200,7 +191,6 @@ def _sort_faces(faces):
 
 
 def _smooth_faces(prev_faces, curr_faces, alpha=0.7):
-    # 平滑人臉框避免抖動
     if curr_faces is None or len(curr_faces) == 0:
         return prev_faces
     if prev_faces is None or len(prev_faces) == 0:
@@ -239,7 +229,6 @@ def _compute_iou(a, b):
 
 
 def _nms_indices(faces, iou_thresh=0.45):
-    # 去除重疊的人臉框
     if faces is None or len(faces) == 0:
         return []
     faces = np.array(faces)
@@ -260,7 +249,6 @@ def _nms_indices(faces, iou_thresh=0.45):
 
 
 def _save_faces_metadata(image_bgr: np.ndarray, faces, media_id: str):
-    # 產生人臉縮圖讓使用者選擇
     items = []
     if faces is None or len(faces) == 0:
         faces = []
@@ -290,7 +278,6 @@ def _load_faces_metadata(media_id: str):
 
 
 def _filter_faces_by_indices(faces, selected_ids):
-    # 只保留使用者選的人臉框
     if faces is None or len(faces) == 0:
         return faces
     if not selected_ids:
@@ -303,7 +290,6 @@ def _filter_faces_by_indices(faces, selected_ids):
 
 
 def _filter_landmarks_by_indices(landmarks, selected_ids):
-    # 只保留使用者選的人臉 landmarks
     if not landmarks:
         return []
     if not selected_ids:
@@ -323,7 +309,6 @@ def draw_face_boxes(image_bgr: np.ndarray, faces):
 
 
 def apply_mosaic(image_bgr: np.ndarray, faces, block_size=12):
-    # 馬賽克整張人臉
     result = image_bgr.copy()
     for (x, y, w, h) in faces:
         roi = result[y : y + h, x : x + w]
@@ -376,7 +361,6 @@ def _smooth_boxes(prev_boxes, curr_boxes, alpha=0.5):
 
 
 def _get_points(landmarks, idxs, w_img, h_img):
-    # 取出指定特徵點座標
     points = []
     for idx in idxs:
         lm = landmarks[idx]
@@ -389,7 +373,6 @@ def apply_eye_cover(
     face_landmarks,
     prev_boxes=None,
 ):
-    # 以眼睛特徵點做遮蓋
     result = image_bgr.copy()
     if not face_landmarks:
         if prev_boxes:
@@ -444,7 +427,6 @@ def apply_eye_cover(
 
 
 def _load_overlay_rgba(path: Path):
-    # 讀取遮擋圖片
     overlay = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
     if overlay is None:
         return None
@@ -455,7 +437,6 @@ def _load_overlay_rgba(path: Path):
 
 
 def apply_face_replace(image_bgr: np.ndarray, faces, overlay_rgba: np.ndarray):
-    # 以遮擋圖片覆蓋人臉
     result = image_bgr.copy()
     for (x, y, w, h) in faces:
         if w <= 0 or h <= 0:
@@ -470,9 +451,8 @@ def apply_face_replace(image_bgr: np.ndarray, faces, overlay_rgba: np.ndarray):
         result[y : y + h, x : x + w] = blended
     return result
 
-# 開啟影片寫入器
-def _open_video_writer(out_base: Path, fps: float, size: tuple[int, int]):
 
+def _open_video_writer(out_base: Path, fps: float, size: tuple[int, int]):
     candidates = [("avc1", ".mp4"), ("mp4v", ".mp4"), ("VP80", ".webm")]
     for fourcc_name, ext in candidates:
         out_path = out_base.with_suffix(ext)
@@ -489,14 +469,20 @@ def _save_preview(image_bgr: np.ndarray, name: str):
     return preview_path
 
 
+# ==================== 路由 ====================
+
 @app.route("/")
 def index():
+    """首頁 - 需要登入才能使用"""
+    if not current_user.is_authenticated:
+        return redirect(url_for("auth.login"))
     return render_template("index.html")
 
 
 @app.route("/upload", methods=["POST"])
+@login_required
 def upload():
-    # 上傳並進行人臉標註預覽
+    """上傳並進行人臉標註預覽"""
     file = request.files.get("media")
     if not file or not file.filename:
         abort(400, "未提供檔案")
@@ -506,7 +492,6 @@ def upload():
         abort(400, "檔案格式不支援")
 
     media_id = _generate_media_id()
-    # 根據檔案類型存到不同資料夾
     if ext in ALLOWED_IMAGE_EXT:
         saved_path = UPLOAD_IMAGE_DIR / f"{media_id}{ext}"
         file_type = "image"
@@ -522,7 +507,6 @@ def upload():
         preview = draw_face_boxes(image, faces)
         preview_path = _save_preview(preview, media_id)
         
-        # 記錄到資料庫
         media_record = Media(
             media_id=media_id,
             original_filename=original_filename,
@@ -530,6 +514,7 @@ def upload():
             upload_path=str(saved_path),
             face_count=len(faces_info),
             status="uploaded",
+            user_id=current_user.id,  # 關聯使用者
         )
         db.session.add(media_record)
         db.session.commit()
@@ -542,7 +527,6 @@ def upload():
             faces=faces_info,
         )
 
-    # 抓第一幀
     cap = cv2.VideoCapture(str(saved_path))
     ok, frame = cap.read()
     cap.release()
@@ -553,7 +537,6 @@ def upload():
     preview = draw_face_boxes(frame, faces)
     preview_path = _save_preview(preview, media_id)
     
-    # 記錄到資料庫
     media_record = Media(
         media_id=media_id,
         original_filename=original_filename,
@@ -561,6 +544,7 @@ def upload():
         upload_path=str(saved_path),
         face_count=len(faces_info),
         status="uploaded",
+        user_id=current_user.id,  # 關聯使用者
     )
     db.session.add(media_record)
     db.session.commit()
@@ -575,8 +559,9 @@ def upload():
 
 
 @app.route("/process", methods=["POST"])
+@login_required
 def process():
-    # 依選擇的模式處理照片/影片
+    """依選擇的模式處理照片/影片"""
     media_id = request.form.get("media_id", "").strip()
     mode = request.form.get("mode", "").strip()
     face_ids_raw = request.form.getlist("face_ids")
@@ -589,7 +574,6 @@ def process():
     if not media_id:
         abort(400, "缺少 media_id")
 
-    # 在圖片和影片資料夾中搜尋檔案
     candidates = list(UPLOAD_IMAGE_DIR.glob(f"{media_id}.*"))
     if not candidates:
         candidates = list(UPLOAD_VIDEO_DIR.glob(f"{media_id}.*"))
@@ -623,12 +607,10 @@ def process():
                 abort(400, "替換圖片讀取失敗")
             output = apply_face_replace(image, faces, overlay)
 
-
         out_name = f"{media_id}_out.jpg"
         out_path = OUTPUT_IMAGE_DIR / out_name
         cv2.imwrite(str(out_path), output)
         
-        # 更新資料庫
         media_record = Media.query.filter_by(media_id=media_id).first()
         if media_record:
             media_record.output_path = str(out_path)
@@ -665,7 +647,6 @@ def process():
         if overlay is None:
             abort(400, "替換圖片讀取失敗")
 
-    # process first frame
     prev_faces = None
     prev_eye_boxes = []
     frame_idx = 0
@@ -717,7 +698,6 @@ def process():
     cap.release()
     writer.release()
     
-    # 更新資料庫
     media_record = Media.query.filter_by(media_id=media_id).first()
     if media_record:
         media_record.output_path = str(out_path)
@@ -734,16 +714,19 @@ def process():
 
 
 @app.route("/outputs/images/<path:filename>")
+@login_required
 def output_images(filename):
     return send_from_directory(OUTPUT_IMAGE_DIR, filename, as_attachment=False)
 
 
 @app.route("/outputs/videos/<path:filename>")
+@login_required
 def output_videos(filename):
     return send_from_directory(OUTPUT_VIDEO_DIR, filename, as_attachment=False)
 
 
 @app.route("/previews/<path:filename>")
+@login_required
 def previews(filename):
     return send_from_directory(PREVIEW_DIR, filename, as_attachment=False)
 

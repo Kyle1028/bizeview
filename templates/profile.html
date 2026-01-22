@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>個人資料 - Photo Blurring</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", sans-serif;
+        background: #ffffff;
+        min-height: 100vh;
+        padding: 40px 20px;
+      }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            color: #333;
+            font-size: 28px;
+        }
+        
+        .btn-logout {
+            padding: 10px 20px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-logout:hover {
+            background: #c0392b;
+            box-shadow: 0 2px 8px rgba(231, 76, 60, 0.3);
+        }
+        
+        .profile-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .profile-section h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .profile-item {
+            display: flex;
+            padding: 15px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .profile-item:last-child {
+            border-bottom: none;
+        }
+        
+        .profile-label {
+            font-weight: 600;
+            color: #666;
+            width: 150px;
+        }
+        
+        .profile-value {
+            color: #333;
+            flex: 1;
+        }
+        
+        .btn-back {
+            display: inline-block;
+            padding: 14px 24px;
+            background: #667eea;
+            color: white;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-back:hover {
+            background: #5568d3;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        .alert {
+            padding: 12px 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        
+        .alert-success {
+            background-color: #efe;
+            color: #3c3;
+            border: 1px solid #cfc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>個人資料</h1>
+            <a href="{{ url_for('auth.logout') }}" class="btn-logout">登出</a>
+        </div>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <div class="profile-section">
+            <h2>帳號資訊</h2>
+            <div class="profile-item">
+                <div class="profile-label">使用者名稱</div>
+                <div class="profile-value">{{ user.username }}</div>
+            </div>
+            <div class="profile-item">
+                <div class="profile-label">電子郵件</div>
+                <div class="profile-value">{{ user.email }}</div>
+            </div>
+            <div class="profile-item">
+                <div class="profile-label">註冊時間</div>
+                <div class="profile-value">{{ user.created_at.strftime('%Y年%m月%d日 %H:%M') }}</div>
+            </div>
+            {% if user.last_login %}
+            <div class="profile-item">
+                <div class="profile-label">最後登入</div>
+                <div class="profile-value">{{ user.last_login.strftime('%Y年%m月%d日 %H:%M') }}</div>
+            </div>
+            {% endif %}
+            <div class="profile-item">
+                <div class="profile-label">帳號狀態</div>
+                <div class="profile-value">
+                    {% if user.is_active %}
+                        <span style="color: #27ae60; font-weight: 600;">● 啟用中</span>
+                    {% else %}
+                        <span style="color: #e74c3c; font-weight: 600;">● 已停用</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 30px;">
+            <a href="{{ url_for('index') }}" class="btn-back">返回首頁</a>
+        </div>
+    </div>
+</body>
+</html>

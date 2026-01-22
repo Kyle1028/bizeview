@@ -3,32 +3,139 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>選擇隱私處理方式</title>
+    <title>選擇處理方式 - Photo Blurring</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 32px; color: #1c1c1c; background: #f5f6f8; }
-      .card { border: none; border-radius: 0; padding: 20px; max-width: 900px; background: #ffffff; }
-      .row { margin: 12px 0; }
-      img { max-width: 100%; border: none; border-radius: 0; }
-      button { padding: 8px 16px; background: #1f6feb; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; }
-      button:hover { background: #1b5fd1; }
-      .hint { color: #666; font-size: 14px; }
-      .preview-title { margin-bottom: 8px; }
-      label { display: block; color: #1c1c1c; }
-      input[type="radio"] { margin-right: 6px; }
-      .back-link { color: #1f6feb; text-decoration: none; }
-      .back-link:hover { text-decoration: underline; }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
       
-      /* 圖片與人臉框容器 */
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", sans-serif;
+        background: #ffffff;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      
+      /* 導航列 */
+      .navbar {
+        background: white;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        padding: 15px 30px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      
+      .navbar-brand {
+        font-size: 20px;
+        font-weight: 600;
+        color: #333;
+      }
+      
+      .navbar-user {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      
+      .user-email {
+        color: #666;
+        font-size: 14px;
+      }
+      
+      .nav-link {
+        color: #667eea;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 500;
+        padding: 8px 16px;
+        border-radius: 6px;
+        transition: all 0.3s;
+      }
+      
+      .nav-link:hover {
+        background: #f0f0f0;
+      }
+      
+      .btn-logout {
+        background: #e74c3c;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.3s;
+      }
+      
+      .btn-logout:hover {
+        background: #c0392b;
+        box-shadow: 0 2px 8px rgba(231, 76, 60, 0.3);
+      }
+      
+      /* 主內容區 */
+      .container {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        padding: 40px 20px;
+      }
+      
+      .card {
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+        padding: 40px;
+        width: 100%;
+        max-width: 1000px;
+      }
+      
+      h2 {
+        color: #333;
+        margin-bottom: 30px;
+        font-size: 28px;
+        text-align: center;
+      }
+      
+      .row {
+        margin: 20px 0;
+      }
+      
+      .preview-section {
+        margin-bottom: 30px;
+      }
+      
+      .preview-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 15px;
+      }
+      
+      img {
+        max-width: 100%;
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+      
+      /* 圖片與人臉框 */
       .image-container {
         position: relative;
         display: inline-block;
         max-width: 100%;
       }
+      
       .image-container img {
         display: block;
         max-width: 100%;
         height: auto;
       }
+      
       .face-overlay {
         position: absolute;
         top: 0;
@@ -37,6 +144,7 @@
         height: 100%;
         pointer-events: none;
       }
+      
       .face-box {
         position: absolute;
         cursor: pointer;
@@ -44,46 +152,145 @@
         transition: all 0.2s ease;
         box-sizing: border-box;
       }
+      
       .face-box.selected {
-        border: 4px solid #0d6efd;
-        background-color: rgba(13, 110, 253, 0.1);
+        border: 4px solid #667eea;
+        background-color: rgba(102, 126, 234, 0.15);
       }
+      
       .face-box.unselected {
-        border: 3px dashed #6c757d;
+        border: 3px dashed #999;
         background-color: rgba(108, 117, 125, 0.05);
       }
+      
       .face-box:hover {
-        box-shadow: 0 0 15px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
         transform: scale(1.02);
       }
+      
       .face-number {
         position: absolute;
         top: -3px;
         left: -3px;
-        background: rgba(0, 0, 0, 0.8);
+        background: rgba(0, 0, 0, 0.85);
         color: white;
-        padding: 3px 8px;
+        padding: 4px 10px;
         font-size: 13px;
         font-weight: bold;
-        border-radius: 3px 0 3px 0;
+        border-radius: 4px 0 4px 0;
       }
+      
       .face-status {
         position: absolute;
         top: -3px;
         right: -3px;
-        background: rgba(0, 0, 0, 0.8);
+        background: rgba(0, 0, 0, 0.85);
         color: white;
-        padding: 4px 8px;
+        padding: 5px 10px;
         font-size: 16px;
         font-weight: bold;
-        border-radius: 0 3px 0 3px;
+        border-radius: 0 4px 0 4px;
         line-height: 1;
       }
+      
       .face-status.selected {
-        background: #0d6efd;
+        background: #667eea;
       }
+      
       .face-status.unselected {
-        background: #6c757d;
+        background: #999;
+      }
+      
+      /* 選項區域 */
+      .options-section {
+        background: #f8f9fa;
+        padding: 25px;
+        border-radius: 15px;
+        margin-top: 30px;
+      }
+      
+      .options-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 20px;
+      }
+      
+      label {
+        display: flex;
+        align-items: center;
+        padding: 12px 15px;
+        background: white;
+        border-radius: 10px;
+        margin-bottom: 10px;
+        cursor: pointer;
+        transition: all 0.3s;
+        border: 2px solid transparent;
+      }
+      
+      label:hover {
+        background: #fff;
+        border-color: #667eea;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+      }
+      
+      input[type="radio"] {
+        margin-right: 12px;
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+      }
+      
+      input[type="file"] {
+        width: 100%;
+        padding: 12px;
+        border: 2px dashed #667eea;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 15px;
+        background: white;
+        margin-top: 10px;
+      }
+      
+      button {
+        width: 100%;
+        padding: 14px 24px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        margin-top: 20px;
+      }
+      
+      button:hover {
+        background: #5568d3;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+      }
+      
+      button:active {
+        background: #4557bc;
+      }
+      
+      .hint {
+        color: #999;
+        font-size: 14px;
+        margin-top: 10px;
+      }
+      
+      .back-link {
+        display: inline-block;
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 500;
+        margin-top: 15px;
+      }
+      
+      .back-link:hover {
+        text-decoration: underline;
       }
       
       /* Loading Overlay */
@@ -94,89 +301,118 @@
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.6);
+        background: rgba(0, 0, 0, 0.7);
         z-index: 9999;
         justify-content: center;
         align-items: center;
         flex-direction: column;
       }
-      .loading-overlay.active { display: flex; }
+      
+      .loading-overlay.active {
+        display: flex;
+      }
+      
       .spinner {
-        width: 50px;
-        height: 50px;
-        border: 4px solid rgba(255, 255, 255, 0.3);
+        width: 60px;
+        height: 60px;
+        border: 5px solid rgba(255, 255, 255, 0.3);
         border-top-color: #ffffff;
         border-radius: 50%;
         animation: spin 1s linear infinite;
       }
+      
       @keyframes spin {
         to { transform: rotate(360deg); }
       }
+      
       .loading-text {
         color: #ffffff;
-        margin-top: 16px;
-        font-size: 16px;
+        margin-top: 20px;
+        font-size: 18px;
+        font-weight: 500;
       }
     </style>
   </head>
   <body>
+    <!-- 導航列 -->
+    <div class="navbar">
+      <div class="navbar-brand">Photo Blurring</div>
+      <div class="navbar-user">
+        <span class="user-email">👤 {{ current_user.email }}</span>
+        <a href="{{ url_for('auth.profile') }}" class="nav-link">個人資料</a>
+        <a href="{{ url_for('auth.logout') }}" class="btn-logout">登出</a>
+      </div>
+    </div>
+
     <!-- Loading Overlay -->
     <div class="loading-overlay" id="loading-overlay">
       <div class="spinner"></div>
       <div class="loading-text" id="loading-text">正在處理中，請稍候...</div>
     </div>
 
-    <div class="card">
-      <h2>人臉標註預覽</h2>
-      <div class="row">
-        <div class="preview-title">偵測結果（點擊人臉框來選擇/取消選擇）</div>
-        {% if faces and faces|length > 0 %}
-          <div class="hint" style="margin-bottom: 12px;">
-            <strong>藍色實線框 ✓</strong> = 已選擇處理 | <strong style="opacity: 0.6;">灰色虛線框 ✕</strong> = 未選擇 | 點擊框可切換狀態
-          </div>
-          <div class="image-container" id="image-container">
-            <img src="{{ preview_url }}" alt="face preview" id="preview-image" />
-            <div class="face-overlay" id="face-overlay"></div>
-          </div>
-        {% else %}
-          <img src="{{ preview_url }}" alt="face preview" />
-        {% endif %}
-      </div>
-      <form action="/process" method="post" enctype="multipart/form-data" id="process-form">
-        <input type="hidden" name="media_id" value="{{ media_id }}" />
-        <input type="hidden" name="is_video" value="{{ 'true' if is_video else 'false' }}" id="is-video" />
-        <div class="row">
+    <!-- 主內容 -->
+    <div class="container">
+      <div class="card">
+        <h2>人臉偵測結果</h2>
+        
+        <div class="preview-section">
+          <div class="preview-title"> 偵測到 {{ faces|length if faces else 0 }} 張人臉（點擊人臉框選擇/取消）</div>
           {% if faces and faces|length > 0 %}
-            <!-- 隱藏的 checkbox 用於提交表單 -->
+            <div class="image-container" id="image-container">
+              <img src="{{ preview_url }}" alt="face preview" id="preview-image" />
+              <div class="face-overlay" id="face-overlay"></div>
+            </div>
+          {% else %}
+            <img src="{{ preview_url }}" alt="face preview" />
+            <div class="hint" style="margin-top: 15px;"> 沒有偵測到人臉，將套用在整張圖/影片上</div>
+          {% endif %}
+        </div>
+        
+        <form action="/process" method="post" enctype="multipart/form-data" id="process-form">
+          <input type="hidden" name="media_id" value="{{ media_id }}" />
+          <input type="hidden" name="is_video" value="{{ 'true' if is_video else 'false' }}" id="is-video" />
+          
+          {% if faces and faces|length > 0 %}
             <div style="display: none;" id="hidden-checkboxes">
               {% for face in faces %}
                 <input type="checkbox" name="face_ids" value="{{ face.id }}" checked id="face-checkbox-{{ face.id }}" />
               {% endfor %}
             </div>
-          {% else %}
-            <div class="hint">沒有偵測到人臉，將套用在整張圖/影片上。</div>
-            <div class="row">
-              <a href="/" class="back-link">返回上傳</a>
-            </div>
           {% endif %}
-        </div>
-        <div class="row">
-          <label><input type="radio" name="mode" value="mosaic" checked /> 馬賽克整張人臉</label>
-        </div>
-        <div class="row">
-          <label><input type="radio" name="mode" value="eyes" /> 遮眼處理</label>
-        </div>
-        <div class="row">
-          <label><input type="radio" name="mode" value="replace" /> 上傳圖片人臉替換</label>
-        </div>
-        <div class="row" id="overlay-row" style="display: none;">
-          <input type="file" name="overlay" accept="image/*" />
-        </div>
-        <div class="row">
-          <button type="submit">開始處理{{ "影片" if is_video else "照片" }}</button>
-        </div>
-      </form>
+          
+          <div class="options-section">
+            <div class="options-title"> 選擇處理方式</div>
+            
+            <label>
+              <input type="radio" name="mode" value="mosaic" checked />
+              <span>馬賽克整張人臉</span>
+            </label>
+            
+            <label>
+              <input type="radio" name="mode" value="eyes" />
+              <span>遮眼處理（白條遮蔽）</span>
+            </label>
+            
+            <label>
+              <input type="radio" name="mode" value="replace" />
+              <span>人臉替換（上傳自訂圖片）</span>
+            </label>
+            
+            <div id="overlay-row" style="display: none;">
+              <input type="file" name="overlay" accept="image/*" />
+              <div class="hint">請上傳要替換的圖片（PNG、JPG、WEBP）</div>
+            </div>
+          </div>
+          
+          <button type="submit"> 開始處理{{ "影片" if is_video else "照片" }}</button>
+          
+          <div style="text-align: center;">
+            <a href="/" class="back-link">← 返回上傳</a>
+          </div>
+        </form>
+      </div>
     </div>
+
     <script>
       const form = document.getElementById("process-form");
       const overlayRow = document.getElementById("overlay-row");
@@ -184,14 +420,16 @@
       const loadingText = document.getElementById("loading-text");
       const isVideo = document.getElementById("is-video").value === "true";
       const radios = form.querySelectorAll('input[name="mode"]');
+      
       const toggleOverlay = () => {
         const selected = form.querySelector('input[name="mode"]:checked');
         overlayRow.style.display = selected && selected.value === "replace" ? "block" : "none";
       };
+      
       radios.forEach((radio) => radio.addEventListener("change", toggleOverlay));
       toggleOverlay();
 
-      // Show loading overlay on form submit
+      // Show loading overlay on submit
       form.addEventListener("submit", () => {
         if (isVideo) {
           loadingText.textContent = "正在處理影片中，影片較大可能需要較長時間，請耐心等候...";
@@ -207,10 +445,8 @@
       const faceOverlay = document.getElementById("face-overlay");
       
       if (facesData && facesData.length > 0 && previewImage && faceOverlay) {
-        // 等待圖片載入完成
         previewImage.addEventListener("load", initializeFaceBoxes);
         
-        // 如果圖片已經載入，直接初始化
         if (previewImage.complete) {
           initializeFaceBoxes();
         }
@@ -221,20 +457,16 @@
           const naturalWidth = previewImage.naturalWidth;
           const naturalHeight = previewImage.naturalHeight;
           
-          // 計算縮放比例
           const scaleX = imgWidth / naturalWidth;
           const scaleY = imgHeight / naturalHeight;
           
-          // 清空現有的框
           faceOverlay.innerHTML = "";
           
-          // 為每個人臉創建可點擊的框
           facesData.forEach((face) => {
             const box = document.createElement("div");
             box.className = "face-box selected";
             box.dataset.faceId = face.id;
             
-            // 根據縮放比例調整位置和大小
             const x = face.x * scaleX;
             const y = face.y * scaleY;
             const w = face.w * scaleX;
@@ -245,19 +477,16 @@
             box.style.width = w + "px";
             box.style.height = h + "px";
             
-            // 添加人臉編號標籤
             const label = document.createElement("div");
             label.className = "face-number";
             label.textContent = "#" + (face.id + 1);
             box.appendChild(label);
             
-            // 添加狀態圖標（打勾/打叉）
             const statusIcon = document.createElement("div");
             statusIcon.className = "face-status selected";
             statusIcon.textContent = "✓";
             box.appendChild(statusIcon);
             
-            // 點擊事件：切換選中狀態
             box.addEventListener("click", () => {
               const checkbox = document.getElementById("face-checkbox-" + face.id);
               if (checkbox) {
@@ -278,7 +507,6 @@
           });
         }
         
-        // 視窗大小改變時重新計算框的位置
         window.addEventListener("resize", initializeFaceBoxes);
       }
     </script>
