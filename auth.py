@@ -95,9 +95,7 @@ def register():
             # 直接建立新使用者
             new_user = User(
                 email=email,
-                username=username if username else email.split("@")[0],
-                is_verified=True,  
-                verified_at=datetime.now()
+                username=username if username else email.split("@")[0]
             )
             new_user.set_password(password)
             
