@@ -17,6 +17,7 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
     last_login = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
+    verified_at = db.Column(db.DateTime, default=datetime.now)  # 註冊時間
     
     def set_password(self, password):
         """設定加密密碼"""
@@ -31,7 +32,7 @@ class User(UserMixin, db.Model):
 
 
 class Media(db.Model):
-    """媒體檔案資料表"""
+
     __tablename__ = "media"
     
     id = db.Column(db.Integer, primary_key=True)

@@ -1,14 +1,11 @@
-"""
-認證系統模組
-處理使用者註冊、登入、登出等功能
-"""
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from models import db, User
+# 移除郵件驗證相關 import
 import re
 
-# 建立認證藍圖
+
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 # 初始化 Flask-Login
@@ -22,7 +19,6 @@ def init_auth(app):
     login_manager.login_message = "請先登入以訪問此頁面"
     login_manager.login_message_category = "warning"
     
-    # 註冊藍圖
     app.register_blueprint(auth_bp)
 
 
@@ -96,17 +92,19 @@ def register():
             return render_template("register.html")
         
         try:
-            # 建立新使用者
+            # 直接建立新使用者
             new_user = User(
                 email=email,
-                username=username if username else email.split("@")[0]
+                username=username if username else email.split("@")[0],
+                is_verified=True,  
+                verified_at=datetime.now()
             )
             new_user.set_password(password)
             
             db.session.add(new_user)
             db.session.commit()
             
-            flash("註冊成功！請登入", "success")
+            flash("註冊成功！現在可以登入了", "success")
             return redirect(url_for("auth.login"))
             
         except Exception as e:
@@ -147,6 +145,8 @@ def login():
             flash("您的帳號已被停用，請聯絡管理員", "error")
             return render_template("login.html")
         
+ 
+        
         # 登入使用者
         login_user(user, remember=remember)
         
@@ -156,7 +156,6 @@ def login():
         
         flash(f"歡迎回來，{user.username}！", "success")
         
-        # 導向原本要去的頁面，或首頁
         next_page = request.args.get("next")
         if next_page:
             return redirect(next_page)
@@ -177,5 +176,7 @@ def logout():
 @auth_bp.route("/profile")
 @login_required
 def profile():
-    """個人資料頁面（未來功能）"""
+    """個人資料頁面"""
     return render_template("profile.html", user=current_user)
+
+

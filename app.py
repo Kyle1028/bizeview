@@ -1,7 +1,3 @@
-"""
-整合認證系統的主程式
-這是一個新的主程式檔案，整合了登入註冊功能
-"""
 import json
 import os
 import uuid
@@ -13,7 +9,7 @@ import numpy as np
 from flask import Flask, render_template, request, send_from_directory, abort, url_for, redirect
 from flask_login import login_required, current_user
 
-# 導入認證系統
+
 from auth import init_auth
 from models import db, Media
 
@@ -60,6 +56,11 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 
 # Session 密鑰（請在生產環境中使用環境變數設定）
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-please-change-in-production")
+
+# 郵件配置（從環境變數讀取）
+app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
+app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
+app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_DEFAULT_SENDER")
 
 # 初始化資料庫
 db.init_app(app)
@@ -469,8 +470,6 @@ def _save_preview(image_bgr: np.ndarray, name: str):
     return preview_path
 
 
-# ==================== 路由 ====================
-
 @app.route("/")
 def index():
     """首頁 - 需要登入才能使用"""
@@ -544,7 +543,7 @@ def upload():
         upload_path=str(saved_path),
         face_count=len(faces_info),
         status="uploaded",
-        user_id=current_user.id,  # 關聯使用者
+        user_id=current_user.id, 
     )
     db.session.add(media_record)
     db.session.commit()
