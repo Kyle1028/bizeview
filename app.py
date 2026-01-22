@@ -103,7 +103,7 @@ def _create_face_landmarker_image(min_detection_confidence=0.5):
 
 
 # 創建預設的人臉偵測器
-FACE_LANDMARKER_IMAGE = _create_face_landmarker_image(0.5) if MP_AVAILABLE else None
+FACE_LANDMARKER_IMAGE = _create_face_landmarker_image(0.6) if MP_AVAILABLE else None
 
 
 def _create_face_landmarker_video(min_detection_confidence=0.5):
@@ -170,6 +170,23 @@ def _detect_landmarks_bgr(
         min_y, max_y = max(0, min(ys)), min(h_img, max(ys))
         w = max_x - min_x
         h = max_y - min_y
+        
+        # 擴展邊界框以包含額頭和耳朵
+        # 向上擴展 30% 高度（包含額頭）
+        # 左右各擴展 15% 寬度（包含耳朵）
+        # 下巴保持原樣
+        expand_top = int(h * 0.3)
+        expand_sides = int(w * 0.15)
+        
+        min_x = max(0, min_x - expand_sides)
+        max_x = min(w_img, max_x + expand_sides)
+        min_y = max(0, min_y - expand_top)
+        # max_y 保持不變（下巴不擴展）
+        max_y = min(h_img, max_y)
+        
+        w = max_x - min_x
+        h = max_y - min_y
+        
         if w > 0 and h > 0:
             boxes.append((min_x, min_y, w, h))
     keep_idx = _nms_indices(boxes)
@@ -495,12 +512,11 @@ def upload():
     if not file or not file.filename:
         abort(400, "未提供檔案")
     
-    # 讀取靈敏度參數（預設 0.5）
     try:
-        sensitivity = float(request.form.get("sensitivity", 0.5))
+        sensitivity = float(request.form.get("sensitivity", 0.6))
         sensitivity = max(0.3, min(0.9, sensitivity))  # 限制範圍在 0.3-0.9
     except:
-        sensitivity = 0.5
+        sensitivity = 0.6
     
     original_filename = file.filename
     ext = Path(file.filename).suffix.lower()
