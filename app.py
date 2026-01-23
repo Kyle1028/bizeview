@@ -54,7 +54,6 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_recycle": 3600,
 }
 
-# Session 密鑰（請在生產環境中使用環境變數設定）
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-please-change-in-production")
 
 # 郵件配置（從環境變數讀取）
@@ -360,13 +359,7 @@ def apply_mosaic(image_bgr: np.ndarray, faces, block_size=12):
 
 
 def _adaptive_alpha(prev_boxes, curr_boxes, base=0.5, min_alpha=0.2):
-    """自適應平滑係數（眼睛遮罩專用）
-    
-    根據眼部區域的相對移動距離動態調整：
-    - 快速移動：返回最小 alpha（快速跟隨）
-    - 中速移動：返回中等 alpha
-    - 慢速移動：返回基礎 alpha（平滑效果）
-    """
+
     if not prev_boxes or not curr_boxes:
         return base
     prev_boxes = sorted(prev_boxes, key=lambda b: (b[0], b[1]))

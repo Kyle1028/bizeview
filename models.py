@@ -47,7 +47,6 @@ class Media(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
     processed_at = db.Column(db.DateTime)
     
-    # 關聯使用者（可選，未來功能）
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     
     def __repr__(self):
