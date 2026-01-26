@@ -286,12 +286,14 @@
     <div class="container">
         <div class="header">
             <div style="margin-bottom: 20px; text-align: center;">
-                <img src="/static/logo.png" alt="商景 Bizeview" style="height: 50px; max-width: 100%; margin-bottom: 15px;">
+                <a href="/" style="display: inline-block;">
+                    <img src="/static/logo.png" alt="商景 Bizeview" style="height: 50px; max-width: 100%; margin-bottom: 15px;">
+                </a>
             </div>
             <div style="margin-bottom: 10px; text-align: right;">
                 {% include '_language_switcher.html' %}
             </div>
-            <h1>👤 {{ _('個人資料') }}</h1>
+            <h1>{{ _('個人資料') }}</h1>
             <a href="{{ url_for('auth.logout') }}" class="btn-logout">{{ _('登出') }}</a>
         </div>
         
@@ -318,21 +320,33 @@
             </div>
             <div class="profile-item">
                 <div class="profile-label">{{ _('註冊時間') }}</div>
-                <div class="profile-value">{{ user.created_at.strftime('%Y年%m月%d日 %H:%M') }}</div>
+                <div class="profile-value">
+                  {% if session.get('lang') == 'en' or request.args.get('lang') == 'en' %}
+                    {{ user.created_at.strftime('%Y/%m/%d %H:%M') }}
+                  {% else %}
+                    {{ user.created_at.strftime('%Y年%m月%d日 %H:%M') }}
+                  {% endif %}
+                </div>
             </div>
             {% if user.last_login %}
             <div class="profile-item">
                 <div class="profile-label">{{ _('最後登入') }}</div>
-                <div class="profile-value">{{ user.last_login.strftime('%Y年%m月%d日 %H:%M') }}</div>
+                <div class="profile-value">
+                  {% if session.get('lang') == 'en' or request.args.get('lang') == 'en' %}
+                    {{ user.last_login.strftime('%Y/%m/%d %H:%M') }}
+                  {% else %}
+                    {{ user.last_login.strftime('%Y年%m月%d日 %H:%M') }}
+                  {% endif %}
+                </div>
             </div>
             {% endif %}
             <div class="profile-item">
                 <div class="profile-label">{{ _('帳號狀態') }}</div>
                 <div class="profile-value">
                     {% if user.is_active %}
-                        <span style="color: #27ae60; font-weight: 600;">● {{ _('啟用中') }}</span>
+                    <span style="color: #27ae60; font-weight: 600;">{{ _('啟用中') }}</span>
                     {% else %}
-                        <span style="color: #e74c3c; font-weight: 600;">● {{ _('已停用') }}</span>
+                        <span style="color: #e74c3c; font-weight: 600;">{{ _('已停用') }}</span>
                     {% endif %}
                 </div>
             </div>
@@ -391,7 +405,7 @@
         
         
         <div class="action-buttons">
-            <a href="{{ url_for('index') }}" class="btn btn-back">← {{ _('返回首頁') }}</a>
+            <a href="{{ url_for('index') }}" class="btn btn-back">{{ _('返回首頁') }}</a>
         </div>
     </div>
 </body>

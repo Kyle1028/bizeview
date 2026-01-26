@@ -256,3 +256,58 @@ msgstr "Download Result"
 
 msgid "處理新檔案"
 msgstr "Process New File"
+
+# Exhibition Pages
+msgid "展覽列表"
+msgstr "Exhibitions"
+
+msgid "線上展覽"
+msgstr "Online Exhibitions"
+
+msgid "探索精彩的展覽作品"
+msgstr "Explore Amazing Exhibition Works"
+
+msgid "日期未定"
+msgstr "Date TBD"
+
+msgid "張照片"
+msgstr "Photos"
+
+msgid "目前尚無展覽"
+msgstr "No Exhibitions Available"
+
+msgid "展覽將陸續上線，敬請期待"
+msgstr "Exhibitions will be added soon, stay tuned"
+
+msgid "返回展覽列表"
+msgstr "Back to Exhibitions"
+
+msgid "開始日期"
+msgstr "Start Date"
+
+msgid "結束日期"
+msgstr "End Date"
+
+msgid "此展覽尚無照片"
+msgstr "No Photos in This Exhibition"
+
+msgid "照片將陸續上傳"
+msgstr "Photos will be uploaded soon"
+
+msgid "上傳照片"
+msgstr "Upload Photos"
+
+msgid "照片影片隱私處理"
+msgstr "Photo/Video Privacy Processing"
+
+msgid "關聯展覽"
+msgstr "Associated Exhibition"
+
+msgid "選擇展覽（可選）"
+msgstr "Select Exhibition (Optional)"
+
+msgid "不關聯展覽"
+msgstr "No Exhibition"
+
+msgid "尚無照片"
+msgstr "No Photos"

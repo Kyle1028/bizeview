@@ -145,6 +145,35 @@
             text-decoration: underline;
         }
         
+        .back-home {
+            text-align: center;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        
+        .back-home a {
+            color: #999;
+            text-decoration: none;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: color 0.3s;
+        }
+        
+        .back-home a:hover {
+            color: #667eea;
+        }
+        
+        .logo-link {
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+        
+        .logo-link:hover {
+            opacity: 0.8;
+        }
+        
         .alert {
             padding: 12px 15px;
             border-radius: 10px;
@@ -221,7 +250,9 @@
             {% include '_language_switcher.html' %}
         </div>
         <div style="text-align: center; margin-bottom: 30px;">
-            <img src="/static/logo.png" alt="商景 Bizeview" style="height: 50px; max-width: 100%;">
+            <a href="/" class="logo-link">
+                <img src="/static/logo.png" alt="商景 Bizeview" style="height: 50px; max-width: 100%;">
+            </a>
         </div>
         <h1>{{ _('歡迎回來') }}</h1>
         <p class="subtitle">{{ _('登入您的商景 Bizeview 帳號') }}</p>
@@ -264,6 +295,10 @@
         
         <div class="register-link">
             {{ _('還沒有帳號？') }}<a href="{{ url_for('auth.register') }}">{{ _('立即註冊') }}</a>
+        </div>
+        
+        <div class="back-home">
+            <a href="/">{{ _('返回首頁') }}</a>
         </div>
     </div>
 </body>

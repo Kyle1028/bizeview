@@ -15,7 +15,7 @@ from flask_login import login_required, current_user
 from flask_babel import Babel, gettext, lazy_gettext
 
 from auth import init_auth  # 認證系統
-from models import db, Media  # 資料庫模型
+from models import db, Media, Exhibition, ExhibitionPhoto  # 資料庫模型
 from media_processor import MediaProcessor  # 媒體處理模組
 
 # 匯入 MediaPipe（用於人臉偵測）
@@ -42,9 +42,10 @@ OUTPUT_VIDEO_DIR = BASE_DIR / "outputs" / "videos"    # 處理後的影片
 PREVIEW_DIR = BASE_DIR / "previews"                    # 預覽圖（含人臉框）
 METADATA_DIR = BASE_DIR / "metadata"                   # 人臉資料（JSON）
 MODEL_DIR = BASE_DIR / "models"                        # AI 模型檔案
+EXHIBITION_DIR = BASE_DIR / "exhibitions"              # 展覽照片目錄
 
 # 自動建立所有需要的目錄（如果不存在）
-for d in (UPLOAD_IMAGE_DIR, UPLOAD_VIDEO_DIR, OUTPUT_IMAGE_DIR, OUTPUT_VIDEO_DIR, PREVIEW_DIR, METADATA_DIR):
+for d in (UPLOAD_IMAGE_DIR, UPLOAD_VIDEO_DIR, OUTPUT_IMAGE_DIR, OUTPUT_VIDEO_DIR, PREVIEW_DIR, METADATA_DIR, EXHIBITION_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 
@@ -107,7 +108,13 @@ def get_locale():
     
     # 從 session 取得語言
     if 'lang' in session:
-        return session['lang']
+        lang = session['lang']
+        # 轉換為 Babel 可識別的格式
+        if lang == 'en':
+            return 'en'
+        elif lang == 'zh_Hant_TW' or lang == 'zh':
+            return 'zh_Hant_TW'
+        return lang
     
     # 回傳預設語言（繁體中文）
     return app.config['BABEL_DEFAULT_LOCALE']
@@ -115,6 +122,16 @@ def get_locale():
 
 # 設定 Babel 的語言選擇函式
 babel.init_app(app, locale_selector=get_locale)
+
+# 讓模板可以訪問 get_locale 函數和當前語言
+@app.context_processor
+def inject_get_locale():
+    def get_current_locale():
+        """獲取當前語言代碼（簡化版，用於模板判斷）"""
+        if 'lang' in session:
+            return session['lang']
+        return 'zh_Hant_TW'
+    return dict(get_locale=get_current_locale, current_locale=get_current_locale())
 
 # 建立資料表（如果不存在）
 with app.app_context():
@@ -959,12 +976,75 @@ def set_language(lang):
 @app.route("/")
 def index():
     """
-    首頁 - 上傳照片/影片的頁面
-    需要登入才能使用
+    首頁 - 展覽列表頁面
+    顯示所有公開的展覽，讓使用者選擇要查看哪個展覽
     """
-    if not current_user.is_authenticated:
-        return redirect(url_for("auth.login"))
-    return render_template("index.html")
+    # 查詢所有公開的展覽，按建立時間倒序排列
+    exhibitions = Exhibition.query.filter_by(is_published=True).order_by(Exhibition.created_at.desc()).all()
+    
+    return render_template("exhibitions_list.html", exhibitions=exhibitions)
+
+
+@app.route("/exhibition/<int:exhibition_id>")
+def exhibition_detail(exhibition_id):
+    """
+    展覽詳情頁面
+    顯示展覽的詳細資訊和所有照片
+    """
+    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    
+    # 檢查展覽是否公開
+    if not exhibition.is_published:
+        if not current_user.is_authenticated or current_user.id != exhibition.creator_id:
+            abort(403, "此展覽尚未公開")
+    
+    # 取得展覽的所有照片，按顯示順序排列
+    photos = ExhibitionPhoto.query.filter_by(exhibition_id=exhibition_id).order_by(ExhibitionPhoto.display_order).all()
+    
+    return render_template("exhibition_detail.html", exhibition=exhibition, photos=photos)
+
+
+@app.route("/exhibition/<int:exhibition_id>/photo/<int:photo_id>")
+def exhibition_photo(exhibition_id, photo_id):
+    """
+    提供展覽照片的存取
+    """
+    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    
+    # 處理封面圖片請求
+    cover_image = request.args.get('cover')
+    if cover_image:
+        # 如果有封面圖片路徑，直接使用
+        photo_path = Path(cover_image)
+        if not photo_path.exists():
+            abort(404, "封面圖片不存在")
+        return send_from_directory(photo_path.parent, photo_path.name, as_attachment=False)
+    
+    # 正常照片請求
+    photo = ExhibitionPhoto.query.get_or_404(photo_id)
+    
+    # 檢查照片是否屬於該展覽
+    if photo.exhibition_id != exhibition_id:
+        abort(404, "照片不存在")
+    
+    # 檢查展覽是否公開
+    if not exhibition.is_published:
+        if not current_user.is_authenticated or current_user.id != exhibition.creator_id:
+            abort(403, "此展覽尚未公開")
+    
+    # 構建完整路徑
+    photo_path = Path(photo.photo_path)
+    if photo_path.is_absolute():
+        full_path = photo_path
+    else:
+        # 如果是相對路徑，從專案根目錄開始構建
+        full_path = BASE_DIR / photo_path
+    
+    if not full_path.exists():
+        # 如果照片不存在，返回預設圖片或錯誤
+        abort(404, f"照片檔案不存在: {full_path}")
+    
+    return send_from_directory(full_path.parent, full_path.name, as_attachment=False)
 
 
 @app.route("/options/<media_id>")
@@ -1001,6 +1081,30 @@ def options(media_id):
     )
 
 
+@app.route("/upload", methods=["GET"])
+@login_required
+def upload_page():
+    """
+    上傳頁面
+    顯示上傳照片/影片的表單
+    支援 exhibition_id 參數來關聯展覽
+    """
+    exhibition_id = request.args.get('exhibition_id', type=int)
+    exhibition = None
+    exhibitions = []
+    
+    if exhibition_id:
+        # 如果指定了展覽ID，獲取該展覽
+        exhibition = Exhibition.query.get(exhibition_id)
+        if not exhibition or not exhibition.is_published:
+            exhibition = None
+    
+    # 獲取所有公開的展覽供選擇
+    exhibitions = Exhibition.query.filter_by(is_published=True).order_by(Exhibition.created_at.desc()).all()
+    
+    return render_template("index.html", exhibition=exhibition, exhibitions=exhibitions)
+
+
 @app.route("/upload", methods=["POST"])
 @login_required
 def upload():
@@ -1024,6 +1128,14 @@ def upload():
         sensitivity = max(0.3, min(0.9, sensitivity))  # 限制在合理範圍內
     except:
         sensitivity = 0.6  # 預設值
+    
+    # 步驟 2.5：取得展覽ID（可選）
+    exhibition_id = request.form.get("exhibition_id", type=int)
+    if exhibition_id:
+        # 驗證展覽是否存在且公開
+        exhibition = Exhibition.query.get(exhibition_id)
+        if not exhibition or not exhibition.is_published:
+            exhibition_id = None
     
     # 步驟 3：檢查檔案格式
     original_filename = file.filename
@@ -1056,7 +1168,8 @@ def upload():
             upload_path=str(saved_path),
             face_count=len(faces_info),
             status="uploaded",
-            user_id=current_user.id,  
+            user_id=current_user.id,
+            exhibition_id=exhibition_id if exhibition_id else None,
         )
         db.session.add(media_record)
         db.session.commit()
@@ -1083,7 +1196,8 @@ def upload():
         upload_path=str(saved_path),
         face_count=len(faces_info),
         status="uploaded",
-        user_id=current_user.id, 
+        user_id=current_user.id,
+        exhibition_id=exhibition_id if exhibition_id else None,
     )
     db.session.add(media_record)
     db.session.commit()

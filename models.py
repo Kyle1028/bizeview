@@ -1,6 +1,6 @@
 """
 資料庫模型定義檔案
-定義了使用者(User)和媒體檔案(Media)兩個資料表
+定義了使用者(User)、媒體檔案(Media)、展覽(Exhibition)和展覽照片(ExhibitionPhoto)資料表
 """
 
 from datetime import datetime
@@ -72,6 +72,66 @@ class Media(db.Model):
     # 關聯欄位：這個媒體檔案屬於哪個使用者
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     
+    # 關聯欄位：這個媒體檔案屬於哪個展覽（可選）
+    exhibition_id = db.Column(db.Integer, db.ForeignKey("exhibitions.id"), nullable=True)
+    
     def __repr__(self):
         """物件的字串表示（用於除錯）"""
         return f"<Media {self.media_id}>"
+
+
+class Exhibition(db.Model):
+    """
+    展覽資料表
+    儲存展覽的基本資訊
+    """
+    __tablename__ = "exhibitions"
+    __table_args__ = {'extend_existing': True}  # 允許擴展現有表定義
+    
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)  # 展覽標題
+    description = db.Column(db.Text)  # 展覽描述
+    cover_image = db.Column(db.String(500))  # 封面圖片路徑
+    start_date = db.Column(db.Date)  # 開始日期
+    end_date = db.Column(db.Date)  # 結束日期
+    is_published = db.Column(db.Boolean, default=True)  # 是否公開
+    created_at = db.Column(db.DateTime, default=datetime.now)  # 建立時間
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)  # 更新時間
+    
+    # 關聯欄位：展覽的建立者
+    creator_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    
+    # 關聯：展覽的照片（一對多）
+    photos = db.relationship("ExhibitionPhoto", back_populates="exhibition", cascade="all, delete-orphan", order_by="ExhibitionPhoto.display_order")
+    
+    # 關聯：展覽的媒體檔案（一對多）
+    media_files = db.relationship("Media", backref="exhibition", lazy="dynamic")
+    
+    def __repr__(self):
+        return f"<Exhibition {self.title}>"
+
+
+class ExhibitionPhoto(db.Model):
+    """
+    展覽照片資料表
+    儲存展覽中的照片資訊
+    """
+    __tablename__ = "exhibition_photos"
+    __table_args__ = {'extend_existing': True}  # 允許擴展現有表定義
+    
+    id = db.Column(db.Integer, primary_key=True)
+    photo_path = db.Column(db.String(500), nullable=False)  # 照片路徑
+    thumbnail_path = db.Column(db.String(500))  # 縮圖路徑
+    title = db.Column(db.String(200))  # 照片標題
+    description = db.Column(db.Text)  # 照片描述
+    display_order = db.Column(db.Integer, default=0)  # 顯示順序
+    created_at = db.Column(db.DateTime, default=datetime.now)  # 上傳時間
+    
+    # 關聯欄位：照片所屬的展覽
+    exhibition_id = db.Column(db.Integer, db.ForeignKey("exhibitions.id"), nullable=False)
+    
+    # 關聯：展覽物件
+    exhibition = db.relationship("Exhibition", back_populates="photos")
+    
+    def __repr__(self):
+        return f"<ExhibitionPhoto {self.id}>"

@@ -292,6 +292,26 @@
       <div class="card">
         <h2>{{ _('上傳照片或影片') }}</h2>
         <form action="/upload" method="post" enctype="multipart/form-data" id="upload-form">
+          {% if exhibition %}
+            <input type="hidden" name="exhibition_id" value="{{ exhibition.id }}" />
+            <div class="row" style="background: #f0f2ff; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+              <div style="font-size: 14px; color: #667eea; font-weight: 600; margin-bottom: 5px;">{{ _('關聯展覽') }}</div>
+              <div style="font-size: 16px; color: #333;">{{ exhibition.title }}</div>
+            </div>
+          {% elif exhibitions %}
+            <div class="row">
+              <label style="display: block; margin-bottom: 10px; color: #333; font-weight: 600;">
+                {{ _('選擇展覽（可選）') }}
+              </label>
+              <select name="exhibition_id" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; background: white;">
+                <option value="">{{ _('不關聯展覽') }}</option>
+                {% for exh in exhibitions %}
+                  <option value="{{ exh.id }}">{{ exh.title }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          {% endif %}
+          
           <div class="row">
             <input type="file" name="media" accept="image/*,video/*" required />
           </div>
