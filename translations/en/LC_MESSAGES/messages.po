@@ -48,6 +48,9 @@ msgstr "Sign up now"
 msgid "登出"
 msgstr "Logout"
 
+msgid "設定"
+msgstr "Settings"
+
 msgid "個人資料"
 msgstr "Profile"
 
@@ -311,3 +314,131 @@ msgstr "No Exhibition"
 
 msgid "尚無照片"
 msgstr "No Photos"
+
+# Account Level / Role
+msgid "帳號等級"
+msgstr "Account Level"
+
+msgid "超級管理員"
+msgstr "Super Administrator"
+
+msgid "管理員"
+msgstr "Administrator"
+
+msgid "一般使用者"
+msgstr "Regular User"
+
+# Admin Pages
+msgid "展覽管理"
+msgstr "Exhibition Management"
+
+msgid "用戶管理"
+msgstr "User Management"
+
+msgid "創建新展覽"
+msgstr "Create New Exhibition"
+
+msgid "編輯展覽"
+msgstr "Edit Exhibition"
+
+msgid "展覽標題"
+msgstr "Exhibition Title"
+
+msgid "展覽描述"
+msgstr "Exhibition Description"
+
+msgid "開始日期"
+msgstr "Start Date"
+
+msgid "結束日期"
+msgstr "End Date"
+
+msgid "封面圖片"
+msgstr "Cover Image"
+
+msgid "立即發布（公開展覽）"
+msgstr "Publish Now (Public Exhibition)"
+
+msgid "創建展覽"
+msgstr "Create Exhibition"
+
+msgid "更新展覽"
+msgstr "Update Exhibition"
+
+msgid "取消"
+msgstr "Cancel"
+
+msgid "刪除"
+msgstr "Delete"
+
+msgid "編輯"
+msgstr "Edit"
+
+msgid "已發布"
+msgstr "Published"
+
+msgid "草稿"
+msgstr "Draft"
+
+msgid "目前尚無展覽"
+msgstr "No Exhibitions Available"
+
+msgid "點擊「創建新展覽」開始創建您的第一個展覽"
+msgstr "Click \"Create New Exhibition\" to create your first exhibition"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "電子郵件"
+msgstr "Email"
+
+msgid "使用者名稱"
+msgstr "Username"
+
+msgid "角色"
+msgstr "Role"
+
+msgid "狀態"
+msgstr "Status"
+
+msgid "註冊時間"
+msgstr "Registration Time"
+
+msgid "操作"
+msgstr "Actions"
+
+msgid "啟用"
+msgstr "Enable"
+
+msgid "停用"
+msgstr "Disable"
+
+msgid "當前用戶"
+msgstr "Current User"
+
+msgid "管理系統中的所有用戶，設置角色和啟用狀態"
+msgstr "Manage all users in the system, set roles and activation status"
+
+msgid "管理您的展覽，創建、編輯或刪除展覽"
+msgstr "Manage your exhibitions, create, edit or delete exhibitions"
+
+msgid "確定要刪除此展覽嗎？"
+msgstr "Are you sure you want to delete this exhibition?"
+
+msgid "無封面圖片"
+msgstr "No Cover Image"
+
+msgid "輸入展覽的詳細描述..."
+msgstr "Enter exhibition description..."
+
+msgid "支援 JPG、PNG、WEBP 格式"
+msgstr "Supported formats: JPG, PNG, WEBP"
+
+msgid "目前封面："
+msgstr "Current cover: "
+
+msgid "查看"
+msgstr "View"
+
+msgid "首頁"
+msgstr "Home"

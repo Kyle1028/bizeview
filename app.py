@@ -13,9 +13,9 @@ from flask import Flask, render_template, request, send_from_directory, abort, u
 from flask_login import login_required, current_user
 from flask_babel import Babel, gettext, lazy_gettext
 
-from auth import init_auth  # 認證系統
-from models import db, Media, Exhibition, ExhibitionPhoto  # 資料庫模型
-from media_processor import MediaProcessor  # 媒體處理模組
+from core.auth import init_auth  # 認證系統
+from core.models import db, Media, Exhibition, ExhibitionPhoto  # 資料庫模型
+from core.media_processor import MediaProcessor  # 媒體處理模組
 
 # 匯入 MediaPipe（用於人臉偵測）
 try:
@@ -88,6 +88,13 @@ db.init_app(app)
 
 # 初始化認證系統
 init_auth(app)
+
+# 初始化管理員系統（延遲導入避免循環依賴）
+def init_admin_system():
+    from core.admin import init_admin
+    init_admin(app)
+
+init_admin_system()
 
 # 初始化 Babel（多語言）
 babel = Babel(app)
@@ -994,7 +1001,8 @@ def exhibition_detail(exhibition_id):
     
     # 檢查展覽是否公開
     if not exhibition.is_published:
-        if not current_user.is_authenticated or current_user.id != exhibition.creator_id:
+        # 只有展覽創建者或管理員可以查看未公開的展覽
+        if not current_user.is_authenticated or not current_user.can_manage_exhibition(exhibition):
             abort(403, "此展覽尚未公開")
     
     # 取得展覽的所有照片，按顯示順序排列
@@ -1003,21 +1011,42 @@ def exhibition_detail(exhibition_id):
     return render_template("exhibition_detail.html", exhibition=exhibition, photos=photos)
 
 
+@app.route("/exhibition/<int:exhibition_id>/cover")
+def exhibition_cover(exhibition_id):
+    """
+    提供展覽封面圖片
+    """
+    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    
+    if not exhibition.cover_image:
+        abort(404, "此展覽沒有封面圖片")
+    
+    # 檢查展覽是否公開
+    if not exhibition.is_published:
+        # 只有展覽創建者或管理員可以查看未公開的展覽
+        if not current_user.is_authenticated or not current_user.can_manage_exhibition(exhibition):
+            abort(403, "此展覽尚未公開")
+    
+    # 構建完整路徑
+    cover_path = Path(exhibition.cover_image)
+    if cover_path.is_absolute():
+        full_path = cover_path
+    else:
+        # 如果是相對路徑，從專案根目錄開始構建
+        full_path = BASE_DIR / cover_path
+    
+    if not full_path.exists():
+        abort(404, f"封面圖片不存在: {full_path}")
+    
+    return send_from_directory(full_path.parent, full_path.name, as_attachment=False)
+
+
 @app.route("/exhibition/<int:exhibition_id>/photo/<int:photo_id>")
 def exhibition_photo(exhibition_id, photo_id):
     """
     提供展覽照片的存取
     """
     exhibition = Exhibition.query.get_or_404(exhibition_id)
-    
-    # 處理封面圖片請求
-    cover_image = request.args.get('cover')
-    if cover_image:
-        # 如果有封面圖片路徑，直接使用
-        photo_path = Path(cover_image)
-        if not photo_path.exists():
-            abort(404, "封面圖片不存在")
-        return send_from_directory(photo_path.parent, photo_path.name, as_attachment=False)
     
     # 正常照片請求
     photo = ExhibitionPhoto.query.get_or_404(photo_id)
@@ -1028,7 +1057,8 @@ def exhibition_photo(exhibition_id, photo_id):
     
     # 檢查展覽是否公開
     if not exhibition.is_published:
-        if not current_user.is_authenticated or current_user.id != exhibition.creator_id:
+        # 只有展覽創建者或管理員可以查看未公開的展覽
+        if not current_user.is_authenticated or not current_user.can_manage_exhibition(exhibition):
             abort(403, "此展覽尚未公開")
     
     # 構建完整路徑

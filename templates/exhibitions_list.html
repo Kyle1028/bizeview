@@ -299,8 +299,7 @@
         {% if current_user.is_authenticated %}
           {% include '_language_switcher.html' %}
           <span class="user-email">👤 {{ current_user.email }}</span>
-          <a href="{{ url_for('auth.profile') }}" class="nav-link">{{ _('個人資料') }}</a>
-          <a href="{{ url_for('auth.logout') }}" class="btn-logout">{{ _('登出') }}</a>
+          {% include '_settings_dropdown.html' %}
         {% else %}
           {% include '_language_switcher.html' %}
           <a href="{{ url_for('auth.login') }}" class="nav-link">{{ _('登入') }}</a>
@@ -320,13 +319,17 @@
           {% for exhibition in exhibitions %}
             <a href="{{ url_for('exhibition_detail', exhibition_id=exhibition.id) }}" class="exhibition-card">
               <div class="exhibition-cover">
-                {% set first_photo = exhibition.photos|first %}
-                {% if first_photo %}
-                  <img src="{{ url_for('exhibition_photo', exhibition_id=exhibition.id, photo_id=first_photo.id) }}" alt="{{ exhibition.title }}">
+                {% if exhibition.cover_image %}
+                  <img src="{{ url_for('exhibition_cover', exhibition_id=exhibition.id) }}" alt="{{ exhibition.title }}">
                 {% else %}
-                  <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 14px;">
-                    {{ _('尚無照片') }}
-                  </div>
+                  {% set first_photo = exhibition.photos|first %}
+                  {% if first_photo %}
+                    <img src="{{ url_for('exhibition_photo', exhibition_id=exhibition.id, photo_id=first_photo.id) }}" alt="{{ exhibition.title }}">
+                  {% else %}
+                    <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 14px;">
+                      {{ _('尚無照片') }}
+                    </div>
+                  {% endif %}
                 {% endif %}
               </div>
               <div class="exhibition-info">

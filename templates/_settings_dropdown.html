@@ -1,0 +1,144 @@
+{# 設定下拉選單組件 #}
+<div class="settings-dropdown">
+  <button class="settings-btn" onclick="toggleSettings()">
+    <span>⚙️</span>
+    <span>{{ _('設定') }}</span>
+    <span class="dropdown-arrow">▼</span>
+  </button>
+  <div class="settings-menu" id="settingsMenu">
+    <a href="{{ url_for('auth.profile') }}" class="settings-item">
+      <span class="settings-icon">👤</span>
+      <span>{{ _('個人資料') }}</span>
+    </a>
+    {% if current_user.is_admin_role() %}
+    <a href="{{ url_for('admin.exhibitions_list') }}" class="settings-item">
+      <span class="settings-icon">🖼️</span>
+      <span>{{ _('展覽管理') }}</span>
+    </a>
+    {% endif %}
+    {% if current_user.is_super_admin_role() %}
+    <a href="{{ url_for('admin.users_list') }}" class="settings-item">
+      <span class="settings-icon">👥</span>
+      <span>{{ _('用戶管理') }}</span>
+    </a>
+    {% endif %}
+    <div class="settings-divider"></div>
+    <a href="{{ url_for('auth.logout') }}" class="settings-item settings-item-danger">
+      <span class="settings-icon">🚪</span>
+      <span>{{ _('登出') }}</span>
+    </a>
+  </div>
+</div>
+
+<style>
+  .settings-dropdown {
+    position: relative;
+    display: inline-block;
+  }
+  
+  .settings-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
+  }
+  
+  .settings-btn:hover {
+    background: #5568d3;
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+    transform: translateY(-1px);
+  }
+  
+  .dropdown-arrow {
+    font-size: 10px;
+    transition: transform 0.3s;
+  }
+  
+  .settings-dropdown.active .dropdown-arrow {
+    transform: rotate(180deg);
+  }
+  
+  .settings-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    min-width: 200px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+    z-index: 1000;
+    overflow: hidden;
+  }
+  
+  .settings-dropdown.active .settings-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+  }
+  
+  .settings-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    color: #333;
+    text-decoration: none;
+    font-size: 14px;
+    transition: all 0.2s;
+    border-left: 3px solid transparent;
+  }
+  
+  .settings-item:hover {
+    background: #f5f7fa;
+    border-left-color: #667eea;
+  }
+  
+  .settings-item-danger {
+    color: #e74c3c;
+  }
+  
+  .settings-item-danger:hover {
+    background: #fee;
+    border-left-color: #e74c3c;
+  }
+  
+  .settings-icon {
+    font-size: 16px;
+    width: 20px;
+    text-align: center;
+  }
+  
+  .settings-divider {
+    height: 1px;
+    background: #e0e0e0;
+    margin: 4px 0;
+  }
+</style>
+
+<script>
+  function toggleSettings() {
+    const dropdown = document.querySelector('.settings-dropdown');
+    dropdown.classList.toggle('active');
+  }
+  
+  // 點擊外部關閉選單
+  document.addEventListener('click', function(event) {
+    const dropdown = document.querySelector('.settings-dropdown');
+    if (dropdown && !dropdown.contains(event.target)) {
+      dropdown.classList.remove('active');
+    }
+  });
+</script>

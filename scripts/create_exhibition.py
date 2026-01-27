@@ -27,7 +27,7 @@ if not os.environ.get("DATABASE_URL"):
 
 # 初始化 Flask 應用
 from app import app
-from models import db, Exhibition, ExhibitionPhoto, User
+from core.models import db, Exhibition, ExhibitionPhoto, User
 
 def create_exhibition():
     """創建展覽記錄"""

@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/static/logo-icon.png" />
+    <title>{{ _('展覽管理') }} - 商景 Bizeview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+        
+        /* 導航列 */
+        .navbar {
+            background: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .navbar-brand {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .navbar-brand a {
+            text-decoration: none;
+            color: inherit;
+            display: inline-block;
+        }
+        
+        .navbar-brand img {
+            height: 40px;
+            vertical-align: middle;
+        }
+        
+        .navbar-user {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .user-email {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .nav-link {
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 10px 20px;
+            border-radius: 6px;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
+        }
+        
+        .nav-link:hover {
+            background: #5568d3;
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        .nav-link.active {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-logout {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        
+        .btn-logout:hover {
+            background: #c0392b;
+        }
+        
+        /* 主內容區 */
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .btn-create {
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-create:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        .exhibitions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .exhibition-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+        
+        .exhibition-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+        }
+        
+        .exhibition-cover {
+            width: 100%;
+            height: 200px;
+            overflow: hidden;
+            background: #f0f0f0;
+        }
+        
+        .exhibition-cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .exhibition-info {
+            padding: 20px;
+        }
+        
+        .exhibition-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .exhibition-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .exhibition-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status-published {
+            background: #2ecc71;
+            color: white;
+        }
+        
+        .status-draft {
+            background: #95a5a6;
+            color: white;
+        }
+        
+        .exhibition-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        
+        .btn-edit {
+            background: #3498db;
+            color: white;
+        }
+        
+        .btn-edit:hover {
+            background: #2980b9;
+        }
+        
+        .btn-delete {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .btn-delete:hover {
+            background: #c0392b;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+        }
+        
+        .empty-state h2 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #666;
+        }
+        
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+        
+        .flash-message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .flash-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .flash-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <!-- 導航列 -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <a href="{{ url_for('index') }}">
+                <img src="/static/logo.png" alt="商景 Bizeview">
+            </a>
+        </div>
+        <div class="navbar-user">
+            {% include '_language_switcher.html' %}
+            <span class="user-email">👤 {{ current_user.email }}</span>
+            {% include '_settings_dropdown.html' %}
+        </div>
+    </nav>
+
+    <!-- 主內容區 -->
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>{{ _('展覽管理') }}</h1>
+                <p>{{ _('管理您的展覽，創建、編輯或刪除展覽') }}</p>
+            </div>
+            <a href="{{ url_for('admin.create_exhibition') }}" class="btn-create">+ {{ _('創建新展覽') }}</a>
+        </div>
+
+        <!-- Flash 訊息 -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <!-- 展覽列表 -->
+        {% if exhibitions %}
+            <div class="exhibitions-grid">
+                {% for exhibition in exhibitions %}
+                    <div class="exhibition-card">
+                        <div class="exhibition-cover">
+                            {% if exhibition.cover_image %}
+                                <img src="{{ url_for('exhibition_cover', exhibition_id=exhibition.id) }}" alt="{{ exhibition.title }}">
+                            {% else %}
+                                {% set first_photo = exhibition.photos|first %}
+                                {% if first_photo %}
+                                    <img src="{{ url_for('exhibition_photo', exhibition_id=exhibition.id, photo_id=first_photo.id) }}" alt="{{ exhibition.title }}">
+                                {% else %}
+                                    <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #999;">
+                                        {{ _('無封面圖片') }}
+                                    </div>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                        <div class="exhibition-info">
+                            <h3 class="exhibition-title">{{ exhibition.title }}</h3>
+                            <div class="exhibition-meta">
+                                <span class="exhibition-status status-{{ 'published' if exhibition.is_published else 'draft' }}">
+                                    {{ _('已發布') if exhibition.is_published else _('草稿') }}
+                                </span>
+                                <div class="exhibition-actions">
+                                    <a href="{{ url_for('admin.edit_exhibition', exhibition_id=exhibition.id) }}" class="btn btn-edit">{{ _('編輯') }}</a>
+                                    <form method="POST" action="{{ url_for('admin.delete_exhibition', exhibition_id=exhibition.id) }}" style="display: inline;" onsubmit="return confirm('{{ _('確定要刪除此展覽嗎？') }}');">
+                                        <button type="submit" class="btn btn-delete">{{ _('刪除') }}</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <h2>{{ _('目前尚無展覽') }}</h2>
+                <p>{{ _('點擊「創建新展覽」開始創建您的第一個展覽') }}</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

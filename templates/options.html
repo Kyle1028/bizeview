@@ -438,8 +438,7 @@
       <div class="navbar-user">
         {% include '_language_switcher.html' %}
         <span class="user-email">👤 {{ current_user.email }}</span>
-        <a href="{{ url_for('auth.profile') }}" class="nav-link">{{ _('個人資料') }}</a>
-        <a href="{{ url_for('auth.logout') }}" class="btn-logout">{{ _('登出') }}</a>
+        {% include '_settings_dropdown.html' %}
       </div>
     </div>
 

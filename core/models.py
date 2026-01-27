@@ -19,6 +19,11 @@ class User(UserMixin, db.Model):
     """
     __tablename__ = "users"  # 資料表名稱
     
+    # 角色常數
+    ROLE_SUPER_ADMIN = "SUPER_ADMIN"
+    ROLE_ADMIN = "ADMIN"
+    ROLE_USER = "USER"
+    
     # 欄位定義
     id = db.Column(db.Integer, primary_key=True)  # 使用者 ID（主鍵，自動遞增）
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)  # 電子郵件（唯一，不可為空）
@@ -27,6 +32,8 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)  # 註冊時間
     last_login = db.Column(db.DateTime)  # 最後登入時間
     is_active = db.Column(db.Boolean, default=True)  # 帳號是否啟用（預設：啟用）
+    role = db.Column(db.String(20), nullable=False, default=ROLE_USER, index=True)  # 角色（SUPER_ADMIN, ADMIN, USER）
+    is_super_admin = db.Column(db.Boolean, default=False, index=True)  # 是否為超級管理員（快速查詢用）
     verified_at = db.Column(db.DateTime, default=datetime.now)  # 帳號驗證時間
     
     def set_password(self, password):
@@ -43,6 +50,54 @@ class User(UserMixin, db.Model):
         回傳：True（正確）或 False（錯誤）
         """
         return check_password_hash(self.password_hash, password)
+    
+    def is_super_admin_role(self):
+        """
+        檢查是否為超級管理員
+        回傳：True（是超級管理員）或 False（不是）
+        """
+        return self.is_super_admin or self.role == self.ROLE_SUPER_ADMIN
+    
+    def is_admin_role(self):
+        """
+        檢查是否為管理員（包含超級管理員）
+        回傳：True（是管理員）或 False（不是）
+        """
+        return self.is_super_admin_role() or self.role == self.ROLE_ADMIN
+    
+    def can_manage_exhibition(self, exhibition):
+        """
+        檢查是否可以管理指定的展覽
+        參數：exhibition - Exhibition 物件
+        回傳：True（可以管理）或 False（不可以）
+        
+        規則：
+        - 超級管理員可以管理所有展覽
+        - 一般管理員只能管理自己創建的展覽
+        - 一般使用者無法管理展覽
+        """
+        if not exhibition:
+            return False
+        
+        # 超級管理員可以管理所有展覽
+        if self.is_super_admin_role():
+            return True
+        
+        # 一般管理員只能管理自己創建的展覽
+        if self.is_admin_role():
+            return exhibition.creator_id == self.id
+        
+        # 一般使用者無法管理展覽
+        return False
+    
+    def can_set_user_role(self):
+        """
+        檢查是否可以設置其他用戶的角色
+        回傳：True（可以）或 False（不可以）
+        
+        只有超級管理員可以設置其他用戶的角色
+        """
+        return self.is_super_admin_role()
     
     def __repr__(self):
         """物件的字串表示（用於除錯）"""

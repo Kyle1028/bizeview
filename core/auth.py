@@ -6,7 +6,7 @@
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from models import db, User
+from core.models import db, User
 import re
 
 # 建立認證，所有認證相關的路由都以 /auth 開頭

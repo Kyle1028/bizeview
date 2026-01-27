@@ -283,18 +283,23 @@
     </style>
 </head>
 <body>
+    <!-- 導航列 -->
+    <nav class="navbar" style="background: white; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+        <div class="navbar-brand" style="font-size: 20px; font-weight: 600; color: #333;">
+            <a href="{{ url_for('index') }}" style="text-decoration: none; color: inherit; display: inline-block;">
+                <img src="/static/logo.png" alt="商景 Bizeview" style="height: 40px; vertical-align: middle;">
+            </a>
+        </div>
+        <div class="navbar-user" style="display: flex; align-items: center; gap: 20px;">
+            {% include '_language_switcher.html' %}
+            <span class="user-email" style="color: #666; font-size: 14px;">👤 {{ current_user.email }}</span>
+            {% include '_settings_dropdown.html' %}
+        </div>
+    </nav>
+
     <div class="container">
         <div class="header">
-            <div style="margin-bottom: 20px; text-align: center;">
-                <a href="/" style="display: inline-block;">
-                    <img src="/static/logo.png" alt="商景 Bizeview" style="height: 50px; max-width: 100%; margin-bottom: 15px;">
-                </a>
-            </div>
-            <div style="margin-bottom: 10px; text-align: right;">
-                {% include '_language_switcher.html' %}
-            </div>
             <h1>{{ _('個人資料') }}</h1>
-            <a href="{{ url_for('auth.logout') }}" class="btn-logout">{{ _('登出') }}</a>
         </div>
         
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -347,6 +352,18 @@
                     <span style="color: #27ae60; font-weight: 600;">{{ _('啟用中') }}</span>
                     {% else %}
                         <span style="color: #e74c3c; font-weight: 600;">{{ _('已停用') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="profile-item">
+                <div class="profile-label">{{ _('帳號等級') }}</div>
+                <div class="profile-value">
+                    {% if user.role == 'SUPER_ADMIN' %}
+                        <span class="role-badge" style="display: inline-block; padding: 6px 16px; border-radius: 20px; background: #e74c3c; color: white; font-weight: 600; font-size: 13px;">{{ _('超級管理員') }}</span>
+                    {% elif user.role == 'ADMIN' %}
+                        <span class="role-badge" style="display: inline-block; padding: 6px 16px; border-radius: 20px; background: #3498db; color: white; font-weight: 600; font-size: 13px;">{{ _('管理員') }}</span>
+                    {% else %}
+                        <span class="role-badge" style="display: inline-block; padding: 6px 16px; border-radius: 20px; background: #95a5a6; color: white; font-weight: 600; font-size: 13px;">{{ _('一般使用者') }}</span>
                     {% endif %}
                 </div>
             </div>
