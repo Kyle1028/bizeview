@@ -14,7 +14,7 @@ from flask_login import login_required, current_user
 from flask_babel import Babel, gettext, lazy_gettext
 
 from core.auth import init_auth  # 認證系統
-from core.models import db, Media, Exhibition, ExhibitionPhoto  # 資料庫模型
+from core.models import db, Media, Exhibition, ExhibitionPhoto, User  # 資料庫模型
 from core.media_processor import MediaProcessor  # 媒體處理模組
 
 # 匯入 MediaPipe（用於人臉偵測）
@@ -1109,11 +1109,16 @@ def options(media_id):
     """
     顯示處理選項頁面
     從資料庫讀取已上傳的媒體資料
+    超級管理員可以查看任何檔案，一般用戶只能查看自己的檔案
     """
     # 從資料庫查詢媒體記錄
-    media = Media.query.filter_by(media_id=media_id, user_id=current_user.id).first()
+    media = Media.query.filter_by(media_id=media_id).first()
     if not media:
         abort(404, "找不到該檔案")
+    
+    # 權限檢查：超級管理員可以查看任何檔案，一般用戶只能查看自己的
+    if not current_user.is_super_admin_role() and media.user_id != current_user.id:
+        abort(403, "您沒有權限查看此檔案")
     
     # 讀取人臉資料
     faces_json_path = METADATA_DIR / f"{media_id}_faces.json"
@@ -1281,9 +1286,14 @@ def result(media_id):
     從資料庫讀取已處理的媒體資料
     """
     # 從資料庫查詢媒體記錄
-    media = Media.query.filter_by(media_id=media_id, user_id=current_user.id).first()
+    # 超級管理員可以查看任何檔案，一般用戶只能查看自己的
+    media = Media.query.filter_by(media_id=media_id).first()
     if not media:
         abort(404, "找不到該檔案")
+    
+    # 權限檢查：超級管理員可以查看任何檔案，一般用戶只能查看自己的
+    if not current_user.is_super_admin_role() and media.user_id != current_user.id:
+        abort(403, "您沒有權限查看此檔案")
     
     if media.status != "processed" or not media.output_path:
         abort(400, "檔案尚未處理完成")
@@ -1461,15 +1471,19 @@ def media_list():
     """
     媒體檔案管理頁面
     顯示當前用戶有媒體檔案的展覽列表
+    超級管理員可以看到所有展覽
     """
-    # 取得當前用戶的所有媒體檔案
-    user_media = Media.query.filter_by(user_id=current_user.id).all()
+    # 超級管理員可以看到所有媒體檔案，一般用戶只能看到自己的
+    if current_user.is_super_admin_role():
+        all_media = Media.query.all()
+    else:
+        all_media = Media.query.filter_by(user_id=current_user.id).all()
     
     # 統計每個展覽的媒體數量
     exhibition_stats = {}
     uncategorized_count = 0
     
-    for media in user_media:
+    for media in all_media:
         if media.exhibition_id:
             if media.exhibition_id not in exhibition_stats:
                 exhibition = db.session.get(Exhibition, media.exhibition_id)
@@ -1497,15 +1511,26 @@ def media_list():
 def media_by_exhibition(exhibition_id):
     """
     顯示特定展覽的媒體檔案
+    超級管理員可以看到該展覽的所有媒體檔案，一般用戶只能看到自己的
     """
     # 取得展覽資訊
     exhibition = Exhibition.query.get_or_404(exhibition_id)
     
-    # 取得當前用戶在該展覽的所有媒體檔案，按上傳時間倒序排列
-    media_list = Media.query.filter_by(
-        user_id=current_user.id,
-        exhibition_id=exhibition_id
-    ).order_by(Media.created_at.desc()).all()
+    # 超級管理員可以看到該展覽的所有媒體檔案，一般用戶只能看到自己的
+    if current_user.is_super_admin_role():
+        media_list = Media.query.filter_by(
+            exhibition_id=exhibition_id
+        ).order_by(Media.created_at.desc()).all()
+    else:
+        media_list = Media.query.filter_by(
+            user_id=current_user.id,
+            exhibition_id=exhibition_id
+        ).order_by(Media.created_at.desc()).all()
+    
+    # 載入 user 關聯（用於顯示上傳者資訊）
+    for media in media_list:
+        if media.user_id:
+            media.user = db.session.get(User, media.user_id)
     
     return render_template("media_by_exhibition.html", 
                           exhibition=exhibition,
@@ -1517,33 +1542,43 @@ def media_by_exhibition(exhibition_id):
 def media_uncategorized():
     """
     顯示未分類的媒體檔案（沒有關聯展覽的）
+    超級管理員可以看到所有未分類的媒體檔案，一般用戶只能看到自己的
     """
-    # 取得當前用戶未分類的所有媒體檔案，按上傳時間倒序排列
-    media_list = Media.query.filter_by(
-        user_id=current_user.id,
-        exhibition_id=None
-    ).order_by(Media.created_at.desc()).all()
+    # 超級管理員可以看到所有未分類的媒體檔案，一般用戶只能看到自己的
+    if current_user.is_super_admin_role():
+        media_list = Media.query.filter_by(
+            exhibition_id=None
+        ).order_by(Media.created_at.desc()).all()
+    else:
+        media_list = Media.query.filter_by(
+            user_id=current_user.id,
+            exhibition_id=None
+        ).order_by(Media.created_at.desc()).all()
+    
+    # 載入 user 關聯（用於顯示上傳者資訊）
+    for media in media_list:
+        if media.user_id:
+            media.user = db.session.get(User, media.user_id)
     
     return render_template("media_by_exhibition.html", 
                           exhibition=None,
                           media_list=media_list)
 
 
-@app.route("/media/<media_id>/delete", methods=["POST"])
-@login_required
-def delete_media(media_id):
+def _delete_media_file(media_id):
     """
-    刪除媒體檔案
-    只允許刪除自己的檔案
+    刪除單個媒體檔案的輔助函數
+    返回 (success, error_message)
     """
-    media = Media.query.filter_by(media_id=media_id, user_id=current_user.id).first()
-    if not media:
-        abort(404, "找不到該檔案")
-    
-    # 保存展覽 ID（用於重定向）
-    exhibition_id = media.exhibition_id
-    
     try:
+        media = Media.query.filter_by(media_id=media_id).first()
+        if not media:
+            return False, f"找不到檔案 {media_id}"
+        
+        # 權限檢查：超級管理員可以刪除任何檔案，一般用戶只能刪除自己的
+        if not current_user.is_super_admin_role() and media.user_id != current_user.id:
+            return False, f"沒有權限刪除檔案 {media_id}"
+        
         # 刪除檔案
         if media.upload_path:
             upload_file = Path(media.upload_path)
@@ -1574,12 +1609,96 @@ def delete_media(media_id):
         
         # 刪除資料庫記錄
         db.session.delete(media)
-        db.session.commit()
         
-        flash("檔案已成功刪除", "success")
+        return True, None
     except Exception as e:
+        return False, str(e)
+
+
+@app.route("/media/<media_id>/delete", methods=["POST"])
+@login_required
+def delete_media(media_id):
+    """
+    刪除媒體檔案
+    超級管理員可以刪除任何檔案，一般用戶只能刪除自己的檔案
+    """
+    media = Media.query.filter_by(media_id=media_id).first()
+    if not media:
+        abort(404, "找不到該檔案")
+    
+    # 權限檢查：超級管理員可以刪除任何檔案，一般用戶只能刪除自己的
+    if not current_user.is_super_admin_role() and media.user_id != current_user.id:
+        abort(403, "您沒有權限刪除此檔案")
+    
+    # 保存展覽 ID（用於重定向）
+    exhibition_id = media.exhibition_id
+    
+    success, error = _delete_media_file(media_id)
+    
+    if success:
+        db.session.commit()
+        flash("檔案已成功刪除", "success")
+    else:
         db.session.rollback()
-        flash(f"刪除失敗：{str(e)}", "error")
+        flash(f"刪除失敗：{error}", "error")
+    
+    # 重定向回原來的頁面
+    if exhibition_id:
+        return redirect(url_for("media_by_exhibition", exhibition_id=exhibition_id))
+    else:
+        return redirect(url_for("media_uncategorized"))
+
+
+@app.route("/media/bulk-delete", methods=["POST"])
+@login_required
+def bulk_delete_media():
+    """
+    批量刪除媒體檔案
+    超級管理員可以刪除任何檔案，一般用戶只能刪除自己的檔案
+    """
+    media_ids_str = request.form.get("media_ids", "")
+    exhibition_id = request.form.get("exhibition_id", type=int)
+    
+    if not media_ids_str:
+        flash("未選擇任何檔案", "error")
+        if exhibition_id:
+            return redirect(url_for("media_by_exhibition", exhibition_id=exhibition_id))
+        else:
+            return redirect(url_for("media_uncategorized"))
+    
+    media_ids = [mid.strip() for mid in media_ids_str.split(",") if mid.strip()]
+    
+    if not media_ids:
+        flash("未選擇任何檔案", "error")
+        if exhibition_id:
+            return redirect(url_for("media_by_exhibition", exhibition_id=exhibition_id))
+        else:
+            return redirect(url_for("media_uncategorized"))
+    
+    success_count = 0
+    error_count = 0
+    errors = []
+    
+    for media_id in media_ids:
+        success, error = _delete_media_file(media_id)
+        if success:
+            success_count += 1
+        else:
+            error_count += 1
+            errors.append(error)
+    
+    # 提交所有成功的刪除
+    if success_count > 0:
+        db.session.commit()
+    
+    # 顯示結果訊息
+    if error_count == 0:
+        flash(f"成功刪除 {success_count} 個檔案", "success")
+    elif success_count == 0:
+        db.session.rollback()
+        flash(f"刪除失敗：{errors[0] if errors else '未知錯誤'}", "error")
+    else:
+        flash(f"成功刪除 {success_count} 個檔案，{error_count} 個失敗", "error")
     
     # 重定向回原來的頁面
     if exhibition_id:
@@ -1593,10 +1712,15 @@ def delete_media(media_id):
 def download_media(media_id):
     """
     下載原始媒體檔案
+    超級管理員可以下載任何檔案，一般用戶只能下載自己的檔案
     """
-    media = Media.query.filter_by(media_id=media_id, user_id=current_user.id).first()
+    media = Media.query.filter_by(media_id=media_id).first()
     if not media:
         abort(404, "找不到該檔案")
+    
+    # 權限檢查：超級管理員可以下載任何檔案，一般用戶只能下載自己的
+    if not current_user.is_super_admin_role() and media.user_id != current_user.id:
+        abort(403, "您沒有權限下載此檔案")
     
     if not media.upload_path:
         abort(404, "檔案路徑不存在")
@@ -1613,10 +1737,15 @@ def download_media(media_id):
 def download_output(media_id):
     """
     下載處理後的媒體檔案
+    超級管理員可以下載任何檔案，一般用戶只能下載自己的檔案
     """
-    media = Media.query.filter_by(media_id=media_id, user_id=current_user.id).first()
+    media = Media.query.filter_by(media_id=media_id).first()
     if not media:
         abort(404, "找不到該檔案")
+    
+    # 權限檢查：超級管理員可以下載任何檔案，一般用戶只能下載自己的
+    if not current_user.is_super_admin_role() and media.user_id != current_user.id:
+        abort(403, "您沒有權限下載此檔案")
     
     if not media.output_path or media.status != "processed":
         abort(400, "檔案尚未處理完成")

@@ -130,6 +130,9 @@ class Media(db.Model):
     # 關聯欄位：這個媒體檔案屬於哪個展覽（可選）
     exhibition_id = db.Column(db.Integer, db.ForeignKey("exhibitions.id"), nullable=True)
     
+    # 關聯：上傳者（多對一）
+    user = db.relationship("User", backref="media_files")
+    
     def __repr__(self):
         """物件的字串表示（用於除錯）"""
         return f"<Media {self.media_id}>"
