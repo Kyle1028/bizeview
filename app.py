@@ -11,7 +11,7 @@ import cv2  # OpenCV：影像處理
 import numpy as np  # NumPy：數值運算
 from flask import Flask, render_template, request, send_from_directory, abort, url_for, redirect, session, flash
 from flask_login import login_required, current_user
-from flask_babel import Babel, gettext, lazy_gettext
+from flask_babel import Babel, gettext as _, lazy_gettext
 
 from core.auth import init_auth  # 認證系統
 from core.models import db, Media, Exhibition, ExhibitionPhoto, User  # 資料庫模型
@@ -1015,6 +1015,25 @@ def index():
     # 查詢所有公開的展覽，按建立時間倒序排列
     exhibitions = Exhibition.query.filter_by(is_published=True).order_by(Exhibition.created_at.desc()).all()
     
+    # 檢查並清理封面圖片不存在的展覽
+    for exhibition in exhibitions:
+        if exhibition.cover_image:
+            # 處理 Windows 路徑分隔符
+            cover_image_path = exhibition.cover_image.replace('\\', '/')
+            cover_path = Path(cover_image_path)
+            if cover_path.is_absolute():
+                full_path = cover_path
+            else:
+                full_path = BASE_DIR / cover_path
+            
+            # 如果封面圖片檔案不存在，清除資料庫中的路徑
+            if not full_path.exists():
+                try:
+                    exhibition.cover_image = None
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+    
     return render_template("exhibitions_list.html", exhibitions=exhibitions)
 
 
@@ -1033,7 +1052,33 @@ def exhibition_detail(exhibition_id):
             abort(403, "此展覽尚未公開")
     
     # 取得展覽的所有照片，按顯示順序排列
-    photos = ExhibitionPhoto.query.filter_by(exhibition_id=exhibition_id).order_by(ExhibitionPhoto.display_order).all()
+    all_photos = ExhibitionPhoto.query.filter_by(exhibition_id=exhibition_id).order_by(ExhibitionPhoto.display_order).all()
+    
+    # 過濾掉檔案不存在的照片
+    photos = []
+    for photo in all_photos:
+        photo_path = Path(photo.photo_path)
+        if photo_path.is_absolute():
+            full_path = photo_path
+        else:
+            full_path = BASE_DIR / photo_path
+        
+        # 如果檔案存在，才加入列表
+        if full_path.exists():
+            photos.append(photo)
+        else:
+            # 檔案不存在，自動刪除資料庫記錄
+            try:
+                db.session.delete(photo)
+            except Exception:
+                pass  # 如果刪除失敗，忽略錯誤
+    
+    # 提交刪除操作
+    if len(photos) < len(all_photos):
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
     
     return render_template("exhibition_detail.html", exhibition=exhibition, photos=photos)
 
@@ -1054,8 +1099,9 @@ def exhibition_cover(exhibition_id):
         if not current_user.is_authenticated or not current_user.can_manage_exhibition(exhibition):
             abort(403, "此展覽尚未公開")
     
-    # 構建完整路徑
-    cover_path = Path(exhibition.cover_image)
+    # 構建完整路徑（處理 Windows 路徑分隔符）
+    cover_image_path = exhibition.cover_image.replace('\\', '/')  # 統一使用正斜線
+    cover_path = Path(cover_image_path)
     if cover_path.is_absolute():
         full_path = cover_path
     else:
@@ -1141,6 +1187,113 @@ def options(media_id):
         preview_url=preview_url,
         faces=faces_info,
     )
+
+
+@app.route("/upload/exhibition/<int:exhibition_id>", methods=["POST"])
+@login_required
+def upload_to_exhibition(exhibition_id):
+    """
+    直接上傳照片/影片到展覽（不進行隱私處理）
+    只保存檔案並添加到展覽照片列表中
+    """
+    # 驗證展覽是否存在
+    exhibition = db.session.get(Exhibition, exhibition_id)
+    if not exhibition:
+        abort(404, "找不到該展覽")
+    
+    # 取得上傳的檔案
+    file = request.files.get("media")
+    if not file or not file.filename:
+        flash(_("未提供檔案"), "error")
+        return redirect(url_for("exhibition_detail", exhibition_id=exhibition_id))
+    
+    # 檢查檔案格式
+    original_filename = file.filename
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_IMAGE_EXT and ext not in ALLOWED_VIDEO_EXT:
+        flash(_("檔案格式不支援"), "error")
+        return redirect(url_for("exhibition_detail", exhibition_id=exhibition_id))
+    
+    # 產生檔案 ID
+    media_id = _generate_media_id(
+        user_id=current_user.id,
+        exhibition_id=exhibition_id,
+        original_filename=original_filename
+    )
+    
+    # 按日期組織檔案並保存
+    upload_date = datetime.now()
+    if ext in ALLOWED_IMAGE_EXT:
+        date_dir = UPLOAD_IMAGE_DIR / str(upload_date.year) / f"{upload_date.month:02d}"
+        date_dir.mkdir(parents=True, exist_ok=True)
+        saved_path = date_dir / f"{media_id}{ext}"
+        file_type = "image"
+    else:
+        date_dir = UPLOAD_VIDEO_DIR / str(upload_date.year) / f"{upload_date.month:02d}"
+        date_dir.mkdir(parents=True, exist_ok=True)
+        saved_path = date_dir / f"{media_id}{ext}"
+        file_type = "video"
+    
+    file.save(saved_path)
+    
+    # 將路徑轉換為相對路徑（相對於 BASE_DIR）
+    saved_path_obj = Path(saved_path)
+    if saved_path_obj.is_absolute():
+        try:
+            relative_path = saved_path_obj.relative_to(BASE_DIR)
+        except ValueError:
+            relative_path = saved_path_obj
+    else:
+        relative_path = saved_path_obj
+    
+    # 如果是影片，嘗試生成預覽圖作為縮圖
+    thumbnail_path = str(relative_path)
+    if file_type == "video":
+        try:
+            cap = cv2.VideoCapture(str(saved_path))
+            ret, frame = cap.read()
+            cap.release()
+            if ret:
+                # 保存第一幀作為預覽圖
+                preview_path = PREVIEW_DIR / f"{media_id}_preview.jpg"
+                cv2.imwrite(str(preview_path), frame)
+                thumbnail_path = str(preview_path.relative_to(BASE_DIR))
+        except Exception:
+            pass  # 如果生成預覽圖失敗，使用原始路徑
+    
+    # 獲取該展覽現有的照片數量，用於設定顯示順序
+    max_order = db.session.query(db.func.max(ExhibitionPhoto.display_order)).filter_by(
+        exhibition_id=exhibition_id
+    ).scalar() or -1
+    
+    # 創建 Media 記錄（用於媒體管理）
+    media_record = Media(
+        media_id=media_id,
+        original_filename=original_filename,
+        file_type=file_type,
+        upload_path=str(saved_path),
+        face_count=0,  # 直接上傳不進行人臉偵測
+        status="uploaded",  # 狀態為已上傳（未處理）
+        user_id=current_user.id,
+        exhibition_id=exhibition_id,
+    )
+    db.session.add(media_record)
+    
+    # 創建展覽照片記錄
+    exhibition_photo = ExhibitionPhoto(
+        exhibition_id=exhibition_id,
+        photo_path=str(relative_path),
+        thumbnail_path=thumbnail_path,
+        title=original_filename,
+        description="",
+        display_order=max_order + 1,
+        created_at=datetime.now()
+    )
+    db.session.add(exhibition_photo)
+    db.session.commit()
+    
+    flash(_("檔案已成功上傳到展覽"), "success")
+    return redirect(url_for("exhibition_detail", exhibition_id=exhibition_id))
 
 
 @app.route("/upload", methods=["GET"])
@@ -1510,6 +1663,107 @@ def previews(filename):
     需要登入才能存取
     """
     return send_from_directory(PREVIEW_DIR, filename, as_attachment=False)
+
+
+@app.route("/exhibition/<int:exhibition_id>/photo/<int:photo_id>/delete", methods=["POST"])
+@login_required
+def delete_exhibition_photo(exhibition_id, photo_id):
+    """
+    刪除展覽照片
+    權限規則：
+    - 超級管理員可以刪除任何照片
+    - 展覽創建者可以刪除展覽中的任何照片
+    - 照片上傳者可以刪除自己上傳的照片（通過 Media 記錄查找）
+    """
+    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    photo = ExhibitionPhoto.query.get_or_404(photo_id)
+    
+    # 檢查照片是否屬於該展覽
+    if photo.exhibition_id != exhibition_id:
+        abort(404, "照片不存在")
+    
+    # 權限檢查
+    has_permission = False
+    
+    # 1. 超級管理員可以刪除任何照片
+    if current_user.is_super_admin_role():
+        has_permission = True
+    # 2. 展覽創建者可以刪除展覽中的任何照片
+    elif current_user.can_manage_exhibition(exhibition):
+        has_permission = True
+    # 3. 檢查是否是照片上傳者（通過 Media 記錄查找）
+    else:
+        # 嘗試通過 photo_path 找到對應的 Media 記錄
+        photo_path = photo.photo_path
+        photo_path_obj = Path(photo_path)
+        if photo_path_obj.is_absolute():
+            full_photo_path = photo_path_obj
+        else:
+            full_photo_path = BASE_DIR / photo_path_obj
+        
+        # 獲取檔案名稱用於匹配
+        photo_filename = full_photo_path.name
+        
+        # 查找對應的 Media 記錄
+        media = Media.query.filter(
+            (Media.upload_path.like(f"%{photo_filename}")) |
+            (Media.output_path.like(f"%{photo_filename}")) |
+            (Media.upload_path == str(photo_path)) |
+            (Media.upload_path == str(full_photo_path)) |
+            (Media.output_path == str(photo_path)) |
+            (Media.output_path == str(full_photo_path))
+        ).first()
+        
+        # 如果是照片上傳者，可以刪除
+        if media and media.user_id == current_user.id:
+            has_permission = True
+    
+    if not has_permission:
+        abort(403, "您沒有權限刪除此照片")
+    
+    errors = []
+    
+    # 刪除檔案（如果存在）
+    photo_path = Path(photo.photo_path)
+    if photo_path.is_absolute():
+        full_path = photo_path
+    else:
+        full_path = BASE_DIR / photo_path
+    
+    if full_path.exists():
+        try:
+            full_path.unlink()
+        except Exception as e:
+            errors.append(f"無法刪除檔案: {e}")
+    
+    # 刪除縮圖（如果不同於主檔案且存在）
+    if photo.thumbnail_path and photo.thumbnail_path != photo.photo_path:
+        thumb_path = Path(photo.thumbnail_path)
+        if thumb_path.is_absolute():
+            full_thumb_path = thumb_path
+        else:
+            full_thumb_path = BASE_DIR / thumb_path
+        
+        if full_thumb_path.exists():
+            try:
+                full_thumb_path.unlink()
+            except Exception as e:
+                errors.append(f"無法刪除縮圖: {e}")
+    
+    # 刪除資料庫記錄
+    try:
+        db.session.delete(photo)
+        db.session.commit()
+        
+        if errors:
+            flash(f"照片已刪除，但部分檔案刪除失敗: {'; '.join(errors)}", "warning")
+        else:
+            flash(_("照片已成功刪除"), "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"刪除失敗：{str(e)}", "error")
+    
+    return redirect(url_for("exhibition_detail", exhibition_id=exhibition_id))
 
 
 # ==================== 媒體管理 ====================
