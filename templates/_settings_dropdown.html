@@ -10,6 +10,10 @@
       <span class="settings-icon">👤</span>
       <span>{{ _('個人資料') }}</span>
     </a>
+    <a href="{{ url_for('media_list') }}" class="settings-item">
+      <span class="settings-icon">📁</span>
+      <span>{{ _('媒體管理') }}</span>
+    </a>
     {% if current_user.is_admin_role() %}
     <a href="{{ url_for('admin.exhibitions_list') }}" class="settings-item">
       <span class="settings-icon">🖼️</span>

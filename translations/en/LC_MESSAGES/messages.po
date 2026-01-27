@@ -442,3 +442,60 @@ msgstr "View"
 
 msgid "首頁"
 msgstr "Home"
+
+msgid "媒體管理"
+msgstr "Media Management"
+
+msgid "上傳新檔案"
+msgstr "Upload New File"
+
+msgid "管理您上傳的所有照片和影片"
+msgstr "Manage all your uploaded photos and videos"
+
+msgid "目前尚無媒體檔案"
+msgstr "No media files yet"
+
+msgid "點擊「上傳新檔案」開始上傳您的第一個照片或影片"
+msgstr "Click \"Upload New File\" to upload your first photo or video"
+
+msgid "確定要刪除此檔案嗎？"
+msgstr "Are you sure you want to delete this file?"
+
+msgid "下載原始"
+msgstr "Download Original"
+
+msgid "查看結果"
+msgstr "View Result"
+
+msgid "已處理"
+msgstr "Processed"
+
+msgid "已上傳"
+msgstr "Uploaded"
+
+msgid "張人臉"
+msgstr "faces"
+
+msgid "處理"
+msgstr "Process"
+
+msgid "個檔案"
+msgstr "files"
+
+msgid "未分類"
+msgstr "Uncategorized"
+
+msgid "未分類檔案"
+msgstr "Uncategorized Files"
+
+msgid "此展覽的媒體檔案"
+msgstr "Media files for this exhibition"
+
+msgid "未關聯到任何展覽的媒體檔案"
+msgstr "Media files not associated with any exhibition"
+
+msgid "此展覽尚無媒體檔案"
+msgstr "No media files for this exhibition"
+
+msgid "返回"
+msgstr "Back"

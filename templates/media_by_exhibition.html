@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/static/logo-icon.png" />
+    <title>{% if exhibition %}{{ exhibition.title }}{% else %}{{ _('未分類檔案') }}{% endif %} - {{ _('媒體管理') }} - 商景 Bizeview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+        
+        /* 導航列 */
+        .navbar {
+            background: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .navbar-brand a {
+            display: inline-block;
+        }
+        
+        .navbar-brand img {
+            height: 40px;
+            vertical-align: middle;
+        }
+        
+        .navbar-user {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .user-email {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+        }
+        
+        h1 {
+            color: #333;
+            font-size: 28px;
+        }
+        
+        .btn-back {
+            background: #95a5a6;
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-back:hover {
+            background: #7f8c8d;
+        }
+        
+        .btn-create {
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-create:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+        
+        .flash-message {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .flash-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .flash-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .media-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .media-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s;
+        }
+        
+        .media-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+        }
+        
+        .media-preview {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: #f0f0f0;
+        }
+        
+        .media-info {
+            padding: 20px;
+        }
+        
+        .media-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            word-break: break-word;
+        }
+        
+        .media-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .meta-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .badge-image {
+            background: #667eea;
+            color: white;
+        }
+        
+        .badge-video {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .badge-uploaded {
+            background: #f39c12;
+            color: white;
+        }
+        
+        .badge-processed {
+            background: #27ae60;
+            color: white;
+        }
+        
+        .media-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+        
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #229954;
+        }
+        
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+        }
+        
+        .empty-state h2 {
+            color: #666;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .empty-state p {
+            color: #999;
+            font-size: 16px;
+        }
+        
+        @media (max-width: 768px) {
+            .media-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 20px;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <a href="{{ url_for('index') }}">
+                <img src="/static/logo.png" alt="商景 Bizeview">
+            </a>
+        </div>
+        <div class="navbar-user">
+            {% include '_language_switcher.html' %}
+            <span class="user-email">👤 {{ current_user.email }}</span>
+            {% include '_settings_dropdown.html' %}
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>
+                    {% if exhibition %}
+                        {{ exhibition.title }}
+                    {% else %}
+                        {{ _('未分類檔案') }}
+                    {% endif %}
+                </h1>
+                <p style="color: #666; margin-top: 5px;">
+                    {% if exhibition %}
+                        {{ _('此展覽的媒體檔案') }}
+                    {% else %}
+                        {{ _('未關聯到任何展覽的媒體檔案') }}
+                    {% endif %}
+                </p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <a href="{{ url_for('media_list') }}" class="btn-back">← {{ _('返回') }}</a>
+                <a href="{{ url_for('upload_page') }}" class="btn-create">+ {{ _('上傳新檔案') }}</a>
+            </div>
+        </div>
+
+        <!-- Flash 訊息 -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <!-- 媒體列表 -->
+        {% if media_list %}
+            <div class="media-grid">
+                {% for media in media_list %}
+                    <div class="media-card">
+                        <div style="position: relative;">
+                            {% set preview_filename = media.media_id + '_preview.jpg' %}
+                            <img src="{{ url_for('previews', filename=preview_filename) }}" 
+                                 alt="{{ media.original_filename or media.media_id }}" 
+                                 class="media-preview"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                            <div class="media-preview" style="display: none; align-items: center; justify-content: center; color: #999; font-size: 14px;">
+                                {% if media.file_type == 'video' %}
+                                    🎥 {{ _('影片') }}
+                                {% else %}
+                                    📷 {{ _('照片') }}
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="media-info">
+                            <div class="media-title">
+                                {{ media.original_filename or media.media_id }}
+                            </div>
+                            <div class="media-meta">
+                                <span class="meta-badge {% if media.file_type == 'image' %}badge-image{% else %}badge-video{% endif %}">
+                                    {% if media.file_type == 'image' %}{{ _('照片') }}{% else %}{{ _('影片') }}{% endif %}
+                                </span>
+                                <span class="meta-badge {% if media.status == 'processed' %}badge-processed{% else %}badge-uploaded{% endif %}">
+                                    {% if media.status == 'processed' %}{{ _('已處理') }}{% else %}{{ _('已上傳') }}{% endif %}
+                                </span>
+                                {% if media.face_count > 0 %}
+                                    <span style="color: #666;">👤 {{ media.face_count }} {{ _('張人臉') }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="media-meta" style="font-size: 12px; color: #999;">
+                                {{ media.created_at.strftime('%Y-%m-%d %H:%M') if media.created_at else '-' }}
+                            </div>
+                            <div class="media-actions">
+                                {% if media.status == 'uploaded' %}
+                                    <a href="{{ url_for('options', media_id=media.media_id) }}" class="btn btn-primary">
+                                        {{ _('處理') }}
+                                    </a>
+                                {% elif media.status == 'processed' %}
+                                    <a href="{{ url_for('result', media_id=media.media_id) }}" class="btn btn-success">
+                                        {{ _('查看結果') }}
+                                    </a>
+                                    <a href="{{ url_for('download_output', media_id=media.media_id) }}" class="btn btn-primary">
+                                        {{ _('下載') }}
+                                    </a>
+                                {% endif %}
+                                <a href="{{ url_for('download_media', media_id=media.media_id) }}" class="btn btn-primary">
+                                    {{ _('下載原始') }}
+                                </a>
+                                <form method="POST" action="{{ url_for('delete_media', media_id=media.media_id) }}" style="display: inline;" 
+                                      onsubmit="return confirm('{{ _('確定要刪除此檔案嗎？') }}');">
+                                    <button type="submit" class="btn btn-danger">{{ _('刪除') }}</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <h2>{{ _('此展覽尚無媒體檔案') }}</h2>
+                <p>{{ _('點擊「上傳新檔案」開始上傳照片或影片') }}</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

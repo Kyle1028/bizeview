@@ -36,7 +36,8 @@ def load_user(user_id):
     載入使用者
     Flask-Login 會自動呼叫此函式來取得目前登入的使用者資訊
     """
-    return User.query.get(int(user_id))
+    from core.models import db
+    return db.session.get(User, int(user_id))
 
 
 def validate_email(email):

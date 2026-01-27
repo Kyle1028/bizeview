@@ -9,7 +9,7 @@ from pathlib import Path
 
 import cv2  # OpenCV：影像處理
 import numpy as np  # NumPy：數值運算
-from flask import Flask, render_template, request, send_from_directory, abort, url_for, redirect, session
+from flask import Flask, render_template, request, send_from_directory, abort, url_for, redirect, session, flash
 from flask_login import login_required, current_user
 from flask_babel import Babel, gettext, lazy_gettext
 
@@ -232,15 +232,42 @@ ALLOWED_VIDEO_EXT = {".mp4", ".mov", ".webm"}
 
 
 
-def _generate_media_id() -> str:
+def _generate_media_id(user_id: int = None, exhibition_id: int = None, original_filename: str = None) -> str:
     """
-    產生唯一的媒體檔案 ID
-    格式：YYYYMMDD_HHMMSS_隨機8碼
-    例如：20260123_143052_a3b9f2c1
+    產生有邏輯的媒體檔案 ID
+    
+    格式：YYYYMMDD_HHMMSS_U{用戶ID}_[E{展覽ID}_]類型_原始檔名前綴_隨機4碼
+    例如：
+    - 20260127_143052_U1_image_photo_a3b9.jpg
+    - 20260127_143052_U1_E5_video_demo_f2c1.mp4
+    
+    參數：
+        user_id: 用戶 ID
+        exhibition_id: 展覽 ID（可選）
+        original_filename: 原始檔案名稱（用於提取有意義的前綴）
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    short_id = uuid.uuid4().hex[:8]  # 取 UUID 前 8 碼
-    return f"{timestamp}_{short_id}"
+    
+    # 用戶前綴
+    user_prefix = f"U{user_id}" if user_id else "U0"
+    
+    # 展覽前綴（如果有）
+    exhibition_prefix = f"E{exhibition_id}_" if exhibition_id else ""
+    
+    # 從原始檔名提取有意義的前綴（去除特殊字元，只保留字母數字，最多10個字元）
+    filename_prefix = ""
+    if original_filename:
+        # 取得檔名（不含副檔名）
+        name_without_ext = Path(original_filename).stem
+        # 只保留字母和數字，轉小寫
+        safe_name = "".join(c for c in name_without_ext if c.isalnum())[:10]
+        if safe_name:
+            filename_prefix = f"{safe_name}_"
+    
+    # 隨機4碼確保唯一性
+    short_id = uuid.uuid4().hex[:4]
+    
+    return f"{timestamp}_{user_prefix}_{exhibition_prefix}{filename_prefix}{short_id}"
 
 
 def _is_image(path: Path) -> bool:
@@ -1124,7 +1151,7 @@ def upload_page():
     
     if exhibition_id:
         # 如果指定了展覽ID，獲取該展覽
-        exhibition = Exhibition.query.get(exhibition_id)
+        exhibition = db.session.get(Exhibition, exhibition_id)
         if not exhibition or not exhibition.is_published:
             exhibition = None
     
@@ -1162,7 +1189,7 @@ def upload():
     exhibition_id = request.form.get("exhibition_id", type=int)
     if exhibition_id:
         # 驗證展覽是否存在且公開
-        exhibition = Exhibition.query.get(exhibition_id)
+        exhibition = db.session.get(Exhibition, exhibition_id)
         if not exhibition or not exhibition.is_published:
             exhibition_id = None
     
@@ -1172,13 +1199,24 @@ def upload():
     if ext not in ALLOWED_IMAGE_EXT and ext not in ALLOWED_VIDEO_EXT:
         abort(400, "檔案格式不支援")
 
-    # 步驟 4：產生唯一的檔案 ID 並儲存檔案
-    media_id = _generate_media_id()
+    # 步驟 4：產生有邏輯的檔案 ID 並儲存檔案
+    media_id = _generate_media_id(
+        user_id=current_user.id,
+        exhibition_id=exhibition_id if exhibition_id else None,
+        original_filename=original_filename
+    )
+    
+    # 按日期組織檔案：uploads/images/YYYY/MM/檔案名
+    upload_date = datetime.now()
     if ext in ALLOWED_IMAGE_EXT:
-        saved_path = UPLOAD_IMAGE_DIR / f"{media_id}{ext}"
+        date_dir = UPLOAD_IMAGE_DIR / str(upload_date.year) / f"{upload_date.month:02d}"
+        date_dir.mkdir(parents=True, exist_ok=True)
+        saved_path = date_dir / f"{media_id}{ext}"
         file_type = "image"
     else:
-        saved_path = UPLOAD_VIDEO_DIR / f"{media_id}{ext}"
+        date_dir = UPLOAD_VIDEO_DIR / str(upload_date.year) / f"{upload_date.month:02d}"
+        date_dir.mkdir(parents=True, exist_ok=True)
+        saved_path = date_dir / f"{media_id}{ext}"
         file_type = "video"
     file.save(saved_path)
 
@@ -1250,14 +1288,25 @@ def result(media_id):
     if media.status != "processed" or not media.output_path:
         abort(400, "檔案尚未處理完成")
     
-    # 取得結果檔案 URL
+    # 取得結果檔案 URL（支援新的日期目錄結構）
     is_video = media.file_type == "video"
-    output_filename = Path(media.output_path).name
+    output_path = Path(media.output_path)
     
+    # 計算相對路徑（從 OUTPUT_IMAGE_DIR 或 OUTPUT_VIDEO_DIR 開始）
     if is_video:
-        result_url = url_for("output_videos", filename=output_filename)
+        try:
+            rel_path = output_path.relative_to(OUTPUT_VIDEO_DIR)
+            result_url = url_for("output_videos", filename=str(rel_path).replace("\\", "/"))
+        except ValueError:
+            # 如果路徑不在 OUTPUT_VIDEO_DIR 下，使用檔名
+            result_url = url_for("output_videos", filename=output_path.name)
     else:
-        result_url = url_for("output_images", filename=output_filename)
+        try:
+            rel_path = output_path.relative_to(OUTPUT_IMAGE_DIR)
+            result_url = url_for("output_images", filename=str(rel_path).replace("\\", "/"))
+        except ValueError:
+            # 如果路徑不在 OUTPUT_IMAGE_DIR 下，使用檔名
+            result_url = url_for("output_images", filename=output_path.name)
     
     return render_template(
         "result.html",
@@ -1296,9 +1345,10 @@ def process():
     if not media_id:
         abort(400, "缺少 media_id")
 
-    candidates = list(UPLOAD_IMAGE_DIR.glob(f"{media_id}.*"))
+    # 查找檔案（支援新的日期目錄結構）
+    candidates = list(UPLOAD_IMAGE_DIR.rglob(f"{media_id}.*"))
     if not candidates:
-        candidates = list(UPLOAD_VIDEO_DIR.glob(f"{media_id}.*"))
+        candidates = list(UPLOAD_VIDEO_DIR.rglob(f"{media_id}.*"))
     if not candidates:
         abort(404, "找不到檔案")
     src_path = candidates[0]
@@ -1309,7 +1359,9 @@ def process():
         overlay_ext = Path(overlay_file.filename).suffix.lower()
         if overlay_ext not in ALLOWED_IMAGE_EXT:
             abort(400, "圖片格式不支援")
-        overlay_path = UPLOAD_IMAGE_DIR / f"{media_id}_overlay{overlay_ext}"
+        # 查找原始檔案所在的目錄，將 overlay 保存在同一目錄
+        overlay_dir = src_path.parent
+        overlay_path = overlay_dir / f"{media_id}_overlay{overlay_ext}"
         overlay_file.save(overlay_path)
 
     # 使用模組化處理器處理媒體檔案
@@ -1317,11 +1369,16 @@ def process():
         # 建立處理器（使用預設靈敏度 0.6，可從 media_record 取得自訂值）
         processor = MediaProcessor(sensitivity=0.6)
         
-        # 設定輸出路徑
+        # 設定輸出路徑（按日期組織）
+        upload_date = datetime.now()
         if _is_image(src_path):
-            out_path = OUTPUT_IMAGE_DIR / f"{media_id}_out.jpg"
+            date_dir = OUTPUT_IMAGE_DIR / str(upload_date.year) / f"{upload_date.month:02d}"
+            date_dir.mkdir(parents=True, exist_ok=True)
+            out_path = date_dir / f"{media_id}_out.jpg"
         else:
-            out_path = OUTPUT_VIDEO_DIR / f"{media_id}_out.mp4"
+            date_dir = OUTPUT_VIDEO_DIR / str(upload_date.year) / f"{upload_date.month:02d}"
+            date_dir.mkdir(parents=True, exist_ok=True)
+            out_path = date_dir / f"{media_id}_out.mp4"
         
         # 處理媒體檔案
         output_path = processor.process(
@@ -1358,8 +1415,15 @@ def output_images(filename):
     """
     提供處理後的照片下載/顯示
     需要登入才能存取
+    支援新的日期目錄結構：outputs/images/YYYY/MM/檔案名
     """
-    return send_from_directory(OUTPUT_IMAGE_DIR, filename, as_attachment=False)
+    # 查找檔案（支援日期目錄結構）
+    candidates = list(OUTPUT_IMAGE_DIR.rglob(filename))
+    if not candidates:
+        abort(404, "檔案不存在")
+    
+    file_path = candidates[0]
+    return send_from_directory(file_path.parent, file_path.name, as_attachment=False)
 
 
 @app.route("/outputs/videos/<path:filename>")
@@ -1368,8 +1432,15 @@ def output_videos(filename):
     """
     提供處理後的影片下載/播放
     需要登入才能存取
+    支援新的日期目錄結構：outputs/videos/YYYY/MM/檔案名
     """
-    return send_from_directory(OUTPUT_VIDEO_DIR, filename, as_attachment=False)
+    # 查找檔案（支援日期目錄結構）
+    candidates = list(OUTPUT_VIDEO_DIR.rglob(filename))
+    if not candidates:
+        abort(404, "檔案不存在")
+    
+    file_path = candidates[0]
+    return send_from_directory(file_path.parent, file_path.name, as_attachment=False)
 
 
 @app.route("/previews/<path:filename>")
@@ -1380,6 +1451,186 @@ def previews(filename):
     需要登入才能存取
     """
     return send_from_directory(PREVIEW_DIR, filename, as_attachment=False)
+
+
+# ==================== 媒體管理 ====================
+
+@app.route("/media")
+@login_required
+def media_list():
+    """
+    媒體檔案管理頁面
+    顯示當前用戶有媒體檔案的展覽列表
+    """
+    # 取得當前用戶的所有媒體檔案
+    user_media = Media.query.filter_by(user_id=current_user.id).all()
+    
+    # 統計每個展覽的媒體數量
+    exhibition_stats = {}
+    uncategorized_count = 0
+    
+    for media in user_media:
+        if media.exhibition_id:
+            if media.exhibition_id not in exhibition_stats:
+                exhibition = db.session.get(Exhibition, media.exhibition_id)
+                if exhibition:
+                    exhibition_stats[media.exhibition_id] = {
+                        'exhibition': exhibition,
+                        'count': 0
+                    }
+            if media.exhibition_id in exhibition_stats:
+                exhibition_stats[media.exhibition_id]['count'] += 1
+        else:
+            uncategorized_count += 1
+    
+    # 轉換為列表並排序
+    exhibitions_with_media = list(exhibition_stats.values())
+    exhibitions_with_media.sort(key=lambda x: x['exhibition'].created_at, reverse=True)
+    
+    return render_template("media_list.html", 
+                          exhibitions_with_media=exhibitions_with_media,
+                          uncategorized_count=uncategorized_count)
+
+
+@app.route("/media/exhibition/<int:exhibition_id>")
+@login_required
+def media_by_exhibition(exhibition_id):
+    """
+    顯示特定展覽的媒體檔案
+    """
+    # 取得展覽資訊
+    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    
+    # 取得當前用戶在該展覽的所有媒體檔案，按上傳時間倒序排列
+    media_list = Media.query.filter_by(
+        user_id=current_user.id,
+        exhibition_id=exhibition_id
+    ).order_by(Media.created_at.desc()).all()
+    
+    return render_template("media_by_exhibition.html", 
+                          exhibition=exhibition,
+                          media_list=media_list)
+
+
+@app.route("/media/uncategorized")
+@login_required
+def media_uncategorized():
+    """
+    顯示未分類的媒體檔案（沒有關聯展覽的）
+    """
+    # 取得當前用戶未分類的所有媒體檔案，按上傳時間倒序排列
+    media_list = Media.query.filter_by(
+        user_id=current_user.id,
+        exhibition_id=None
+    ).order_by(Media.created_at.desc()).all()
+    
+    return render_template("media_by_exhibition.html", 
+                          exhibition=None,
+                          media_list=media_list)
+
+
+@app.route("/media/<media_id>/delete", methods=["POST"])
+@login_required
+def delete_media(media_id):
+    """
+    刪除媒體檔案
+    只允許刪除自己的檔案
+    """
+    media = Media.query.filter_by(media_id=media_id, user_id=current_user.id).first()
+    if not media:
+        abort(404, "找不到該檔案")
+    
+    # 保存展覽 ID（用於重定向）
+    exhibition_id = media.exhibition_id
+    
+    try:
+        # 刪除檔案
+        if media.upload_path:
+            upload_file = Path(media.upload_path)
+            if upload_file.exists():
+                upload_file.unlink()
+        
+        if media.output_path:
+            output_file = Path(media.output_path)
+            if output_file.exists():
+                output_file.unlink()
+        
+        # 刪除預覽圖
+        preview_files = list(PREVIEW_DIR.glob(f"{media_id}_preview.*"))
+        for preview_file in preview_files:
+            if preview_file.exists():
+                preview_file.unlink()
+        
+        # 刪除人臉資料
+        faces_json = METADATA_DIR / f"{media_id}_faces.json"
+        if faces_json.exists():
+            faces_json.unlink()
+        
+        # 刪除人臉截圖
+        face_crops = list(METADATA_DIR.glob(f"{media_id}_face_*.jpg"))
+        for crop_file in face_crops:
+            if crop_file.exists():
+                crop_file.unlink()
+        
+        # 刪除資料庫記錄
+        db.session.delete(media)
+        db.session.commit()
+        
+        flash("檔案已成功刪除", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"刪除失敗：{str(e)}", "error")
+    
+    # 重定向回原來的頁面
+    if exhibition_id:
+        return redirect(url_for("media_by_exhibition", exhibition_id=exhibition_id))
+    else:
+        return redirect(url_for("media_uncategorized"))
+
+
+@app.route("/media/<media_id>/download")
+@login_required
+def download_media(media_id):
+    """
+    下載原始媒體檔案
+    """
+    media = Media.query.filter_by(media_id=media_id, user_id=current_user.id).first()
+    if not media:
+        abort(404, "找不到該檔案")
+    
+    if not media.upload_path:
+        abort(404, "檔案路徑不存在")
+    
+    file_path = Path(media.upload_path)
+    if not file_path.exists():
+        abort(404, "檔案不存在")
+    
+    return send_from_directory(file_path.parent, file_path.name, as_attachment=True, download_name=media.original_filename or file_path.name)
+
+
+@app.route("/media/<media_id>/download_output")
+@login_required
+def download_output(media_id):
+    """
+    下載處理後的媒體檔案
+    """
+    media = Media.query.filter_by(media_id=media_id, user_id=current_user.id).first()
+    if not media:
+        abort(404, "找不到該檔案")
+    
+    if not media.output_path or media.status != "processed":
+        abort(400, "檔案尚未處理完成")
+    
+    file_path = Path(media.output_path)
+    if not file_path.exists():
+        abort(404, "檔案不存在")
+    
+    # 生成下載檔名
+    original_name = Path(media.original_filename).stem if media.original_filename else "output"
+    ext = file_path.suffix
+    download_name = f"{original_name}_processed{ext}"
+    
+    return send_from_directory(file_path.parent, file_path.name, as_attachment=True, download_name=download_name)
 
 
 # ==================== 啟動應用程式 ====================
