@@ -1700,46 +1700,49 @@ def process():
                     _rename_media_ids(media_id, new_media_id, media_record)
                     media_id = new_media_id
             
-            # 如果媒體檔案有關聯到展覽，自動添加到展覽照片中（圖片和影片都支持）
+            # 如果媒體檔案有關聯到展覽：展覽應顯示「處理後」的檔案，故更新既有展覽照片為 output，或無對應時才新增
             if media_record.exhibition_id:
-                # 將輸出路徑轉換為相對路徑（相對於 BASE_DIR）
-                output_path_obj = Path(output_path)
-                if output_path_obj.is_absolute():
-                    try:
-                        relative_path = output_path_obj.relative_to(BASE_DIR)
-                    except ValueError:
-                        # 如果路徑不在 BASE_DIR 下，使用絕對路徑
-                        relative_path = output_path_obj
+                # 使用 media_record.output_path（_rename_media_ids 可能已改檔名，須用更新後的路徑）
+                output_path_for_display = Path(media_record.output_path)
+                if not output_path_for_display.is_absolute():
+                    output_path_for_display = BASE_DIR / output_path_for_display
+                try:
+                    relative_path = output_path_for_display.relative_to(BASE_DIR)
+                except ValueError:
+                    relative_path = output_path_for_display
+                
+                upload_full = Path(media_record.upload_path).resolve() if media_record.upload_path else None
+                existing_photo = None
+                if upload_full and upload_full.exists():
+                    for ep in ExhibitionPhoto.query.filter_by(exhibition_id=media_record.exhibition_id).all():
+                        ep_path = Path(ep.photo_path)
+                        if not ep_path.is_absolute():
+                            ep_path = BASE_DIR / ep_path
+                        if ep_path.resolve() == upload_full:
+                            existing_photo = ep
+                            break
+                
+                if media_record.file_type == "video":
+                    preview_files = list(PREVIEW_DIR.glob(f"{media_id}_preview.*"))
+                    thumbnail_path = preview_files[0].relative_to(BASE_DIR) if preview_files else str(relative_path)
                 else:
-                    relative_path = output_path_obj
+                    thumbnail_path = str(relative_path)
                 
-                # 檢查是否已經存在對應的 ExhibitionPhoto（使用相對路徑比較）
-                existing_photo = ExhibitionPhoto.query.filter_by(
-                    exhibition_id=media_record.exhibition_id
-                ).filter(
-                    (ExhibitionPhoto.photo_path == str(relative_path)) | 
-                    (ExhibitionPhoto.photo_path == str(output_path))
-                ).first()
-                
-                if not existing_photo:
-                    # 獲取該展覽現有的照片數量，用於設定顯示順序
+                if existing_photo:
+                    # 更新既有展覽照片：改為顯示處理後的檔案（展覽不再顯示原檔）
+                    existing_photo.photo_path = str(relative_path)
+                    existing_photo.thumbnail_path = thumbnail_path
+                    existing_photo.title = media_record.original_filename or (f"處理後的{'影片' if media_record.file_type == 'video' else '照片'} {media_id}")
+                    existing_photo.description = f"處理模式: {mode}"
+                else:
+                    # 無對應的展覽照片（例如從選項頁關聯展覽）則新增一筆，直接使用處理後路徑
                     max_order = db.session.query(db.func.max(ExhibitionPhoto.display_order)).filter_by(
                         exhibition_id=media_record.exhibition_id
                     ).scalar() or -1
-                    
-                    # 如果是影片，使用預覽圖作為縮圖；如果是圖片，使用處理後的圖片作為縮圖
-                    if media_record.file_type == "video":
-                        # 查找預覽圖作為縮圖
-                        preview_files = list(PREVIEW_DIR.glob(f"{media_id}_preview.*"))
-                        thumbnail_path = preview_files[0].relative_to(BASE_DIR) if preview_files else str(relative_path)
-                    else:
-                        thumbnail_path = str(relative_path)
-                    
-                    # 創建展覽照片記錄（使用相對路徑）
                     exhibition_photo = ExhibitionPhoto(
                         exhibition_id=media_record.exhibition_id,
                         photo_path=str(relative_path),
-                        thumbnail_path=str(thumbnail_path),
+                        thumbnail_path=thumbnail_path,
                         title=media_record.original_filename or (f"處理後的{'影片' if media_record.file_type == 'video' else '照片'} {media_id}"),
                         description=f"處理模式: {mode}",
                         display_order=max_order + 1,
