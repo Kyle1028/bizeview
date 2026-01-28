@@ -3,6 +3,7 @@
 定義了使用者(User)、媒體檔案(Media)、展覽(Exhibition)和展覽照片(ExhibitionPhoto)資料表
 """
 
+import secrets
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -10,6 +11,38 @@ from flask_login import UserMixin
 
 # 建立資料庫物件，用於操作資料庫
 db = SQLAlchemy()
+
+
+def _digits(n: int, k: int = 10) -> str:
+    """產生 n 個 0–9 的隨機數字。"""
+    return "".join(str(secrets.randbelow(10)) for _ in range(n))
+
+
+def _public_id_user(seq_id: int) -> str:
+    """User 對外識別碼：6 + 11 位數字序號 + 8 碼隨機數字，共 20 字元。例：600000000001XXXXXXXX"""
+    return "6" + str(seq_id).zfill(11) + _digits(8)
+
+
+def _public_id_exhibition(seq_id: int) -> str:
+    """展覽對外識別碼：7 + 9 位數字序號 + 6 碼隨機數字，共 16 字元。例：700000000001XXXXXXXX"""
+    return "7" + str(seq_id).zfill(9) + _digits(6)
+
+
+def _media_id_from_seq(seq_id: int) -> str:
+    """影像檔對外識別碼：8 + 15 位數字序號 + 4 碼隨機數字，共 20 字元。例：8000000000000001XXXX"""
+    return "8" + str(seq_id).zfill(15) + _digits(4)
+
+
+def _refresh_media_id_suffix(media_id: str) -> str:
+    """編修時只重算最後 4 碼隨機數字（須為 8+15+4 格式）。"""
+    if len(media_id) == 20 and media_id[0] == "8":
+        return media_id[:16] + _digits(4)
+    return media_id
+
+
+def _default_public_id():
+    """未經「先 commit 再填 public_id」時為 None；新建請用 _public_id_user(id) / _public_id_exhibition(id)。"""
+    return None
 
 
 class User(UserMixin, db.Model):
@@ -25,7 +58,8 @@ class User(UserMixin, db.Model):
     ROLE_USER = "USER"
     
     # 欄位定義
-    id = db.Column(db.Integer, primary_key=True)  # 使用者 ID（主鍵，自動遞增）
+    id = db.Column(db.Integer, primary_key=True)  # 使用者 ID（主鍵，自動遞增，僅內部使用）
+    public_id = db.Column(db.String(36), unique=True, nullable=True, index=True, default=_default_public_id)  # 對外識別碼（UUID），用於 URL，不可猜
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)  # 電子郵件（唯一，不可為空）
     password_hash = db.Column(db.String(255), nullable=False)  # 加密後的密碼
     username = db.Column(db.String(80), nullable=True)  # 使用者名稱（可選）
@@ -124,11 +158,11 @@ class Media(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)  # 上傳時間
     processed_at = db.Column(db.DateTime)  # 處理完成時間
     
-    # 關聯欄位：這個媒體檔案屬於哪個使用者
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    # 關聯欄位：這個媒體檔案屬於哪個使用者（加 index 以加速 filter_by(user_id)）
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
     
-    # 關聯欄位：這個媒體檔案屬於哪個展覽（可選）
-    exhibition_id = db.Column(db.Integer, db.ForeignKey("exhibitions.id"), nullable=True)
+    # 關聯欄位：這個媒體檔案屬於哪個展覽（加 index 以加速 filter_by(exhibition_id)）
+    exhibition_id = db.Column(db.Integer, db.ForeignKey("exhibitions.id"), nullable=True, index=True)
     
     # 關聯：上傳者（多對一）
     user = db.relationship("User", backref="media_files")
@@ -147,13 +181,14 @@ class Exhibition(db.Model):
     __table_args__ = {'extend_existing': True}  # 允許擴展現有表定義
     
     id = db.Column(db.Integer, primary_key=True)
+    public_id = db.Column(db.String(36), unique=True, nullable=True, index=True, default=_default_public_id)  # 對外識別碼（UUID），用於 URL，不可猜
     title = db.Column(db.String(200), nullable=False)  # 展覽標題
     description = db.Column(db.Text)  # 展覽描述
     cover_image = db.Column(db.String(500))  # 封面圖片路徑
     start_date = db.Column(db.Date)  # 開始日期
     end_date = db.Column(db.Date)  # 結束日期
-    is_published = db.Column(db.Boolean, default=True)  # 是否公開
-    created_at = db.Column(db.DateTime, default=datetime.now)  # 建立時間
+    is_published = db.Column(db.Boolean, default=True, index=True)  # 是否公開（首頁/列表常用 filter）
+    created_at = db.Column(db.DateTime, default=datetime.now, index=True)  # 建立時間（常用 order_by）
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)  # 更新時間
     
     # 關聯欄位：展覽的建立者
@@ -185,8 +220,8 @@ class ExhibitionPhoto(db.Model):
     display_order = db.Column(db.Integer, default=0)  # 顯示順序
     created_at = db.Column(db.DateTime, default=datetime.now)  # 上傳時間
     
-    # 關聯欄位：照片所屬的展覽
-    exhibition_id = db.Column(db.Integer, db.ForeignKey("exhibitions.id"), nullable=False)
+    # 關聯欄位：照片所屬的展覽（加 index 以加速 filter_by(exhibition_id)）
+    exhibition_id = db.Column(db.Integer, db.ForeignKey("exhibitions.id"), nullable=False, index=True)
     
     # 關聯：展覽物件
     exhibition = db.relationship("Exhibition", back_populates="photos")

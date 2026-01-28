@@ -124,6 +124,43 @@
         color: #666;
       }
       
+      /* 搜尋區 */
+      .search-bar {
+        display: flex;
+        gap: 10px;
+        max-width: 480px;
+        margin: 0 auto 30px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .search-bar input {
+        flex: 1;
+        min-width: 180px;
+        padding: 12px 16px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 16px;
+      }
+      .search-bar input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+      }
+      .search-bar button {
+        background: #667eea;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .search-bar button:hover {
+        background: #5568d3;
+      }
+      
       /* 展覽網格 */
       .exhibitions-grid {
         display: grid;
@@ -226,6 +263,13 @@
       .empty-state p {
         font-size: 16px;
       }
+      .empty-state a {
+        color: #667eea;
+        text-decoration: none;
+      }
+      .empty-state a:hover {
+        text-decoration: underline;
+      }
       
       /* 手機版響應式設計 */
       @media (max-width: 768px) {
@@ -267,6 +311,14 @@
         
         .page-header p {
           font-size: 16px;
+        }
+        
+        .search-bar {
+          padding: 0 10px;
+          margin-bottom: 24px;
+        }
+        .search-bar input {
+          min-width: 100%;
         }
         
         .exhibitions-grid {
@@ -341,17 +393,22 @@
         <h1>{{ _('線上展覽') }}</h1>
       </div>
       
+      <form class="search-bar" method="GET" action="{{ url_for('index') }}">
+        <input type="search" name="q" value="{{ search_query or '' }}" placeholder="{{ _('搜尋展覽標題或內容') }}" aria-label="{{ _('搜尋') }}">
+        <button type="submit">{{ _('搜尋') }}</button>
+      </form>
+      
       {% if exhibitions %}
         <div class="exhibitions-grid">
           {% for exhibition in exhibitions %}
-            <a href="{{ url_for('exhibition_detail', exhibition_id=exhibition.id) }}" class="exhibition-card">
+            <a href="{{ url_for('exhibition_detail', exhibition_public_id=exhibition.public_id) }}" class="exhibition-card">
               <div class="exhibition-cover">
                 {% if exhibition.cover_image %}
-                  <img src="{{ url_for('exhibition_cover', exhibition_id=exhibition.id) }}" alt="{{ exhibition.title }}">
+                  <img src="{{ url_for('exhibition_cover', exhibition_public_id=exhibition.public_id) }}" alt="{{ exhibition.title }}">
                 {% else %}
                   {% set first_photo = exhibition.photos|first %}
                   {% if first_photo %}
-                    <img src="{{ url_for('exhibition_photo', exhibition_id=exhibition.id, photo_id=first_photo.id) }}" alt="{{ exhibition.title }}">
+                    <img src="{{ url_for('exhibition_photo', exhibition_public_id=exhibition.public_id, photo_id=first_photo.id) }}" alt="{{ exhibition.title }}">
                   {% else %}
                     <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 14px;">
                       {{ _('尚無照片') }}
@@ -381,8 +438,13 @@
         </div>
       {% else %}
         <div class="empty-state">
-          <h2>{{ _('目前尚無展覽') }}</h2>
-          <p>{{ _('展覽將陸續上線，敬請期待') }}</p>
+          {% if search_query %}
+            <h2>{{ _('找不到符合的展覽') }}</h2>
+            <p>{{ _('請嘗試其他關鍵字，或') }} <a href="{{ url_for('index') }}">{{ _('查看全部展覽') }}</a></p>
+          {% else %}
+            <h2>{{ _('目前尚無展覽') }}</h2>
+            <p>{{ _('展覽將陸續上線，敬請期待') }}</p>
+          {% endif %}
         </div>
       {% endif %}
     </div>

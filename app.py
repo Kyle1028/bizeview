@@ -13,8 +13,9 @@ from flask import Flask, render_template, request, send_from_directory, abort, u
 from flask_login import login_required, current_user
 from flask_babel import Babel, gettext as _, lazy_gettext
 
+from sqlalchemy import or_, and_
 from core.auth import init_auth  # 認證系統
-from core.models import db, Media, Exhibition, ExhibitionPhoto, User  # 資料庫模型
+from core.models import db, Media, Exhibition, ExhibitionPhoto, User, _media_id_from_seq, _refresh_media_id_suffix  # 資料庫模型
 from core.media_processor import MediaProcessor  # 媒體處理模組
 
 # 匯入 MediaPipe（用於人臉偵測）
@@ -232,42 +233,69 @@ ALLOWED_VIDEO_EXT = {".mp4", ".mov", ".webm"}
 
 
 
-def _generate_media_id(user_id: int = None, exhibition_id: int = None, original_filename: str = None) -> str:
-    """
-    產生有邏輯的媒體檔案 ID
-    
-    格式：YYYYMMDD_HHMMSS_U{用戶ID}_[E{展覽ID}_]類型_原始檔名前綴_隨機4碼
-    例如：
-    - 20260127_143052_U1_image_photo_a3b9.jpg
-    - 20260127_143052_U1_E5_video_demo_f2c1.mp4
-    
-    參數：
-        user_id: 用戶 ID
-        exhibition_id: 展覽 ID（可選）
-        original_filename: 原始檔案名稱（用於提取有意義的前綴）
-    """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # 用戶前綴
-    user_prefix = f"U{user_id}" if user_id else "U0"
-    
-    # 展覽前綴（如果有）
-    exhibition_prefix = f"E{exhibition_id}_" if exhibition_id else ""
-    
-    # 從原始檔名提取有意義的前綴（去除特殊字元，只保留字母數字，最多10個字元）
-    filename_prefix = ""
-    if original_filename:
-        # 取得檔名（不含副檔名）
-        name_without_ext = Path(original_filename).stem
-        # 只保留字母和數字，轉小寫
-        safe_name = "".join(c for c in name_without_ext if c.isalnum())[:10]
-        if safe_name:
-            filename_prefix = f"{safe_name}_"
-    
-    # 隨機4碼確保唯一性
-    short_id = uuid.uuid4().hex[:4]
-    
-    return f"{timestamp}_{user_prefix}_{exhibition_prefix}{filename_prefix}{short_id}"
+def _temp_media_id() -> str:
+    """上傳時先用的暫時 ID，存檔與建立 Media 後再以 _apply_real_media_id 換成 8+15+4 格式。"""
+    return "tmp" + uuid.uuid4().hex[:14]
+
+
+def _rename_media_ids(old_id: str, new_id: str, media_record: Media):
+    """將所有以 old_id 命名的檔案改為 new_id，並更新 media_record 與 ExhibitionPhoto 的路徑。"""
+    # 1. 上傳檔（uploads/images 或 videos 底下的 {old_id}.ext）
+    for base in (UPLOAD_IMAGE_DIR, UPLOAD_VIDEO_DIR):
+        for p in base.rglob(f"{old_id}.*"):
+            ext = p.suffix
+            new_p = p.parent / f"{new_id}{ext}"
+            if p != new_p:
+                p.rename(new_p)
+                if media_record and media_record.upload_path == str(p):
+                    media_record.upload_path = str(new_p)
+    # 2. 預覽圖
+    for p in PREVIEW_DIR.glob(f"{old_id}_preview.*"):
+        new_p = p.parent / f"{new_id}_preview{p.suffix}"
+        p.rename(new_p)
+    # 3. metadata（faces.json、face crops）
+    j = METADATA_DIR / f"{old_id}_faces.json"
+    if j.exists():
+        j.rename(METADATA_DIR / f"{new_id}_faces.json")
+    for p in METADATA_DIR.glob(f"{old_id}_face_*.jpg"):
+        rest = p.name[len(old_id) :]
+        p.rename(METADATA_DIR / f"{new_id}{rest}")
+    # 4. 輸出品（outputs 底下的 {old_id}_out.*）
+    for base in (OUTPUT_IMAGE_DIR, OUTPUT_VIDEO_DIR):
+        for p in base.rglob(f"{old_id}_out.*"):
+            new_p = p.parent / f"{new_id}_out{p.suffix}"
+            p.rename(new_p)
+            if media_record and getattr(media_record, "output_path", None) == str(p):
+                media_record.output_path = str(new_p)
+    # 5. overlay（上傳目錄下的 {old_id}_overlay.*）
+    for base in (UPLOAD_IMAGE_DIR, UPLOAD_VIDEO_DIR):
+        for p in base.rglob(f"{old_id}_overlay.*"):
+            new_p = p.parent / f"{new_id}_overlay{p.suffix}"
+            p.rename(new_p)
+    # 6. 更新 media 紀錄
+    if media_record:
+        media_record.media_id = new_id
+        if media_record.upload_path and old_id in media_record.upload_path:
+            media_record.upload_path = media_record.upload_path.replace(old_id, new_id)
+        if getattr(media_record, "output_path", None) and old_id in (media_record.output_path or ""):
+            media_record.output_path = (media_record.output_path or "").replace(old_id, new_id)
+    # 7. 更新展覽照片路徑（相對路徑字串中的 old_id）
+    if media_record and getattr(media_record, "exhibition_id", None):
+        for ep in ExhibitionPhoto.query.filter_by(exhibition_id=media_record.exhibition_id).all():
+            if ep.photo_path and old_id in ep.photo_path:
+                ep.photo_path = ep.photo_path.replace(old_id, new_id)
+            if ep.thumbnail_path and old_id in ep.thumbnail_path:
+                ep.thumbnail_path = ep.thumbnail_path.replace(old_id, new_id)
+
+
+def _apply_real_media_id(media_record: Media) -> str:
+    """將暫時 media_id 換成正式格式 8+15位序號+4碼隨機，並 rename 相關檔案。回傳新 media_id。"""
+    old_id = media_record.media_id
+    new_id = _media_id_from_seq(media_record.id)
+    if old_id == new_id:
+        return new_id
+    _rename_media_ids(old_id, new_id, media_record)
+    return new_id
 
 
 def _is_image(path: Path) -> bool:
@@ -1011,9 +1039,19 @@ def index():
     """
     首頁 - 展覽列表頁面
     顯示所有公開的展覽，讓使用者選擇要查看哪個展覽
+    支援 ?q=關鍵字 搜尋展覽標題與描述
     """
-    # 查詢所有公開的展覽，按建立時間倒序排列
-    exhibitions = Exhibition.query.filter_by(is_published=True).order_by(Exhibition.created_at.desc()).all()
+    q = request.args.get("q", "").strip()
+    base_query = Exhibition.query.filter_by(is_published=True)
+    if q:
+        pattern = f"%{q}%"
+        base_query = base_query.filter(
+            or_(
+                Exhibition.title.ilike(pattern),
+                and_(Exhibition.description.isnot(None), Exhibition.description.ilike(pattern)),
+            )
+        )
+    exhibitions = base_query.order_by(Exhibition.created_at.desc()).all()
     
     # 檢查並清理封面圖片不存在的展覽
     for exhibition in exhibitions:
@@ -1034,16 +1072,16 @@ def index():
                 except Exception:
                     db.session.rollback()
     
-    return render_template("exhibitions_list.html", exhibitions=exhibitions)
+    return render_template("exhibitions_list.html", exhibitions=exhibitions, search_query=q)
 
 
-@app.route("/exhibition/<int:exhibition_id>")
-def exhibition_detail(exhibition_id):
+@app.route("/exhibition/<exhibition_public_id>")
+def exhibition_detail(exhibition_public_id):
     """
-    展覽詳情頁面
+    展覽詳情頁面（對外使用 public_id，不可猜）
     顯示展覽的詳細資訊和所有照片
     """
-    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
     
     # 檢查展覽是否公開
     if not exhibition.is_published:
@@ -1052,7 +1090,7 @@ def exhibition_detail(exhibition_id):
             abort(403, "此展覽尚未公開")
     
     # 取得展覽的所有照片，按顯示順序排列
-    all_photos = ExhibitionPhoto.query.filter_by(exhibition_id=exhibition_id).order_by(ExhibitionPhoto.display_order).all()
+    all_photos = ExhibitionPhoto.query.filter_by(exhibition_id=exhibition.id).order_by(ExhibitionPhoto.display_order).all()
     
     # 過濾掉檔案不存在的照片
     photos = []
@@ -1083,12 +1121,12 @@ def exhibition_detail(exhibition_id):
     return render_template("exhibition_detail.html", exhibition=exhibition, photos=photos)
 
 
-@app.route("/exhibition/<int:exhibition_id>/cover")
-def exhibition_cover(exhibition_id):
+@app.route("/exhibition/<exhibition_public_id>/cover")
+def exhibition_cover(exhibition_public_id):
     """
-    提供展覽封面圖片
+    提供展覽封面圖片（對外使用 public_id）
     """
-    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
     
     if not exhibition.cover_image:
         abort(404, "此展覽沒有封面圖片")
@@ -1114,19 +1152,19 @@ def exhibition_cover(exhibition_id):
     return send_from_directory(full_path.parent, full_path.name, as_attachment=False)
 
 
-@app.route("/exhibition/<int:exhibition_id>/photo/<int:photo_id>")
-def exhibition_photo(exhibition_id, photo_id):
+@app.route("/exhibition/<exhibition_public_id>/photo/<int:photo_id>")
+def exhibition_photo(exhibition_public_id, photo_id):
     """
-    提供展覽照片/影片的存取
+    提供展覽照片/影片的存取（對外展覽用 public_id）
     支持圖片和影片
     """
-    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
     
     # 正常照片請求
     photo = ExhibitionPhoto.query.get_or_404(photo_id)
     
     # 檢查照片是否屬於該展覽
-    if photo.exhibition_id != exhibition_id:
+    if photo.exhibition_id != exhibition.id:
         abort(404, "照片不存在")
     
     # 檢查展覽是否公開
@@ -1154,27 +1192,55 @@ def exhibition_photo(exhibition_id, photo_id):
 @login_required
 def options(media_id):
     """
-    顯示處理選項頁面
-    從資料庫讀取已上傳的媒體資料
-    超級管理員可以查看任何檔案，一般用戶只能查看自己的檔案
+    顯示處理選項頁面（含人臉標註）
+    從資料庫讀取已上傳的媒體資料。
+    若尚無人臉資料（例如從展覽頁直接上傳的檔案），會先執行人臉偵測並寫入 metadata，
+    再顯示人臉框與選項，避免「按處理卻沒有人臉」的情況。
     """
-    # 從資料庫查詢媒體記錄
     media = Media.query.filter_by(media_id=media_id).first()
     if not media:
         abort(404, "找不到該檔案")
     
-    # 權限檢查：超級管理員可以查看任何檔案，一般用戶只能查看自己的
     if not current_user.is_super_admin_role() and media.user_id != current_user.id:
         abort(403, "您沒有權限查看此檔案")
     
-    # 讀取人臉資料
     faces_json_path = METADATA_DIR / f"{media_id}_faces.json"
     faces_info = []
+    
     if faces_json_path.exists():
         with open(faces_json_path, "r", encoding="utf-8") as f:
             faces_info = json.load(f)
+    elif media.upload_path:
+        # 從展覽頁「直接上傳」的檔案沒有跑過人臉偵測，在此補做一次
+        upload_path = Path(media.upload_path)
+        if not upload_path.is_absolute():
+            upload_path = BASE_DIR / upload_path
+        if upload_path.exists():
+            try:
+                if media.file_type == "image":
+                    img = cv2.imread(str(upload_path))
+                    if img is not None:
+                        fd = _create_face_landmarker_image(0.6)
+                        _, faces = _detect_landmarks_bgr(img, fd, None)
+                        faces_info = _save_faces_metadata(img, faces, media_id)
+                        preview = draw_face_boxes(img, faces)
+                        _save_preview(preview, f"{media_id}_preview")
+                else:
+                    cap = cv2.VideoCapture(str(upload_path))
+                    ok, frame = cap.read()
+                    cap.release()
+                    if ok:
+                        fd = _create_face_landmarker_image(0.6)
+                        _, faces = _detect_landmarks_bgr(frame, fd, None)
+                        faces_info = _save_faces_metadata(frame, faces, media_id)
+                        preview = draw_face_boxes(frame, faces)
+                        _save_preview(preview, f"{media_id}_preview")
+                if faces_info and media:
+                    media.face_count = len(faces_info)
+                    db.session.commit()
+            except Exception:
+                pass  # 偵測失敗時仍顯示 options，faces_info 為空
     
-    # 取得預覽圖片
     preview_files = list(PREVIEW_DIR.glob(f"{media_id}_preview.*"))
     preview_url = url_for("previews", filename=preview_files[0].name) if preview_files else ""
     
@@ -1189,37 +1255,30 @@ def options(media_id):
     )
 
 
-@app.route("/upload/exhibition/<int:exhibition_id>", methods=["POST"])
+@app.route("/upload/exhibition/<exhibition_public_id>", methods=["POST"])
 @login_required
-def upload_to_exhibition(exhibition_id):
+def upload_to_exhibition(exhibition_public_id):
     """
-    直接上傳照片/影片到展覽（不進行隱私處理）
+    直接上傳照片/影片到展覽（不進行隱私處理，對外使用 public_id）
     只保存檔案並添加到展覽照片列表中
     """
-    # 驗證展覽是否存在
-    exhibition = db.session.get(Exhibition, exhibition_id)
-    if not exhibition:
-        abort(404, "找不到該展覽")
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
     
     # 取得上傳的檔案
     file = request.files.get("media")
     if not file or not file.filename:
         flash(_("未提供檔案"), "error")
-        return redirect(url_for("exhibition_detail", exhibition_id=exhibition_id))
+        return redirect(url_for("exhibition_detail", exhibition_public_id=exhibition.public_id))
     
     # 檢查檔案格式
     original_filename = file.filename
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_IMAGE_EXT and ext not in ALLOWED_VIDEO_EXT:
         flash(_("檔案格式不支援"), "error")
-        return redirect(url_for("exhibition_detail", exhibition_id=exhibition_id))
+        return redirect(url_for("exhibition_detail", exhibition_public_id=exhibition.public_id))
     
-    # 產生檔案 ID
-    media_id = _generate_media_id(
-        user_id=current_user.id,
-        exhibition_id=exhibition_id,
-        original_filename=original_filename
-    )
+    # 暫時 ID，存檔後再換成 8+15位序號+4碼隨機
+    media_id = _temp_media_id()
     
     # 按日期組織檔案並保存
     upload_date = datetime.now()
@@ -1273,7 +1332,7 @@ def upload_to_exhibition(exhibition_id):
     
     # 獲取該展覽現有的照片數量，用於設定顯示順序
     max_order = db.session.query(db.func.max(ExhibitionPhoto.display_order)).filter_by(
-        exhibition_id=exhibition_id
+        exhibition_id=exhibition.id
     ).scalar() or -1
     
     # 創建 Media 記錄（用於媒體管理）
@@ -1285,13 +1344,13 @@ def upload_to_exhibition(exhibition_id):
         face_count=0,  # 直接上傳不進行人臉偵測
         status="uploaded",  # 狀態為已上傳（未處理）
         user_id=current_user.id,
-        exhibition_id=exhibition_id,
+        exhibition_id=exhibition.id,
     )
     db.session.add(media_record)
     
     # 創建展覽照片記錄
     exhibition_photo = ExhibitionPhoto(
-        exhibition_id=exhibition_id,
+        exhibition_id=exhibition.id,
         photo_path=str(relative_path),
         thumbnail_path=thumbnail_path,
         title=original_filename,
@@ -1301,9 +1360,11 @@ def upload_to_exhibition(exhibition_id):
     )
     db.session.add(exhibition_photo)
     db.session.commit()
+    _apply_real_media_id(media_record)
+    db.session.commit()
     
     flash(_("檔案已成功上傳到展覽"), "success")
-    return redirect(url_for("exhibition_detail", exhibition_id=exhibition_id))
+    return redirect(url_for("exhibition_detail", exhibition_public_id=exhibition.public_id))
 
 
 @app.route("/upload", methods=["GET"])
@@ -1312,17 +1373,14 @@ def upload_page():
     """
     上傳頁面
     顯示上傳照片/影片的表單
-    支援 exhibition_id 參數來關聯展覽
+    支援 exhibition_public_id 參數來關聯展覽（對外用 public_id）
     """
-    exhibition_id = request.args.get('exhibition_id', type=int)
+    exhibition_public_id = request.args.get("exhibition_public_id", "").strip()
     exhibition = None
     exhibitions = []
     
-    if exhibition_id:
-        # 如果指定了展覽ID，獲取該展覽
-        exhibition = db.session.get(Exhibition, exhibition_id)
-        if not exhibition or not exhibition.is_published:
-            exhibition = None
+    if exhibition_public_id:
+        exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id, is_published=True).first()
     
     # 獲取所有公開的展覽供選擇
     exhibitions = Exhibition.query.filter_by(is_published=True).order_by(Exhibition.created_at.desc()).all()
@@ -1354,13 +1412,19 @@ def upload():
     except:
         sensitivity = 0.6  # 預設值
     
-    # 步驟 2.5：取得展覽ID（可選）
-    exhibition_id = request.form.get("exhibition_id", type=int)
-    if exhibition_id:
-        # 驗證展覽是否存在且公開
-        exhibition = db.session.get(Exhibition, exhibition_id)
-        if not exhibition or not exhibition.is_published:
-            exhibition_id = None
+    # 步驟 2.5：取得展覽（可選，表單可送 exhibition_public_id 或舊的 exhibition_id）
+    exhibition_id = None
+    pid = request.form.get("exhibition_public_id", "").strip()
+    if pid:
+        ex = Exhibition.query.filter_by(public_id=pid, is_published=True).first()
+        if ex:
+            exhibition_id = ex.id
+    if exhibition_id is None:
+        exhibition_id = request.form.get("exhibition_id", type=int)
+        if exhibition_id:
+            ex = db.session.get(Exhibition, exhibition_id)
+            if not ex or not ex.is_published:
+                exhibition_id = None
     
     # 步驟 3：檢查檔案格式
     original_filename = file.filename
@@ -1368,12 +1432,8 @@ def upload():
     if ext not in ALLOWED_IMAGE_EXT and ext not in ALLOWED_VIDEO_EXT:
         abort(400, "檔案格式不支援")
 
-    # 步驟 4：產生有邏輯的檔案 ID 並儲存檔案
-    media_id = _generate_media_id(
-        user_id=current_user.id,
-        exhibition_id=exhibition_id if exhibition_id else None,
-        original_filename=original_filename
-    )
+    # 步驟 4：暫時 ID，存檔後再換成 8+15位序號+4碼隨機
+    media_id = _temp_media_id()
     
     # 按日期組織檔案：uploads/images/YYYY/MM/檔案名
     upload_date = datetime.now()
@@ -1409,8 +1469,8 @@ def upload():
         )
         db.session.add(media_record)
         db.session.commit()
-        
-        # 重定向到 options 頁面
+        media_id = _apply_real_media_id(media_record)
+        db.session.commit()
         return redirect(url_for("options", media_id=media_id))
 
     cap = cv2.VideoCapture(str(saved_path))
@@ -1437,8 +1497,8 @@ def upload():
     )
     db.session.add(media_record)
     db.session.commit()
-    
-    # 重定向到 options 頁面
+    media_id = _apply_real_media_id(media_record)
+    db.session.commit()
     return redirect(url_for("options", media_id=media_id))
 
 
@@ -1519,13 +1579,22 @@ def process():
     if not media_id:
         abort(400, "缺少 media_id")
 
-    # 查找檔案（支援新的日期目錄結構）
-    candidates = list(UPLOAD_IMAGE_DIR.rglob(f"{media_id}.*"))
-    if not candidates:
-        candidates = list(UPLOAD_VIDEO_DIR.rglob(f"{media_id}.*"))
-    if not candidates:
-        abort(404, "找不到檔案")
-    src_path = candidates[0]
+    # 優先從 DB 的 upload_path 取得路徑，避免大量檔案時 rglob 掃描整棵目錄樹
+    media_record_for_path = Media.query.filter_by(media_id=media_id).first()
+    if media_record_for_path and media_record_for_path.upload_path:
+        up = Path(media_record_for_path.upload_path)
+        src_path = up if up.is_absolute() else BASE_DIR / up
+        if not src_path.exists():
+            src_path = None
+    else:
+        src_path = None
+    if src_path is None:
+        candidates = list(UPLOAD_IMAGE_DIR.rglob(f"{media_id}.*"))
+        if not candidates:
+            candidates = list(UPLOAD_VIDEO_DIR.rglob(f"{media_id}.*"))
+        if not candidates:
+            abort(404, "找不到檔案")
+        src_path = candidates[0]
 
     overlay_file = request.files.get("overlay")
     overlay_path = None
@@ -1570,6 +1639,12 @@ def process():
             media_record.process_mode = mode
             media_record.status = "processed"
             media_record.processed_at = datetime.now()
+            # 編修（後續加隱私處理）：只重算 media_id 最後 4 碼並 rename 相關檔案
+            if len(media_id) == 20 and media_id[0] == "8":
+                new_media_id = _refresh_media_id_suffix(media_id)
+                if new_media_id != media_id:
+                    _rename_media_ids(media_id, new_media_id, media_record)
+                    media_id = new_media_id
             
             # 如果媒體檔案有關聯到展覽，自動添加到展覽照片中（圖片和影片都支持）
             if media_record.exhibition_id:
@@ -1709,21 +1784,21 @@ def upload_videos(filename):
     return send_from_directory(file_path.parent, file_path.name, as_attachment=False)
 
 
-@app.route("/exhibition/<int:exhibition_id>/photo/<int:photo_id>/delete", methods=["POST"])
+@app.route("/exhibition/<exhibition_public_id>/photo/<int:photo_id>/delete", methods=["POST"])
 @login_required
-def delete_exhibition_photo(exhibition_id, photo_id):
+def delete_exhibition_photo(exhibition_public_id, photo_id):
     """
-    刪除展覽照片
+    刪除展覽照片（對外使用 public_id）
     權限規則：
     - 超級管理員可以刪除任何照片
     - 展覽創建者可以刪除展覽中的任何照片
     - 照片上傳者可以刪除自己上傳的照片（通過 Media 記錄查找）
     """
-    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
     photo = ExhibitionPhoto.query.get_or_404(photo_id)
     
     # 檢查照片是否屬於該展覽
-    if photo.exhibition_id != exhibition_id:
+    if photo.exhibition_id != exhibition.id:
         abort(404, "照片不存在")
     
     # 權限檢查
@@ -1765,6 +1840,20 @@ def delete_exhibition_photo(exhibition_id, photo_id):
     if not has_permission:
         abort(403, "您沒有權限刪除此照片")
     
+    # 找出對應的 Media 記錄（若存在），刪除展覽照片時一併刪除，媒體管理才不會殘留
+    photo_path_str = photo.photo_path
+    photo_path_for_lookup = Path(photo_path_str)
+    full_photo_path_lookup = photo_path_for_lookup if photo_path_for_lookup.is_absolute() else BASE_DIR / photo_path_for_lookup
+    photo_filename = full_photo_path_lookup.name
+    linked_media = Media.query.filter(
+        (Media.upload_path.like(f"%{photo_filename}")) |
+        (Media.output_path.like(f"%{photo_filename}")) |
+        (Media.upload_path == photo_path_str) |
+        (Media.upload_path == str(full_photo_path_lookup)) |
+        (Media.output_path == photo_path_str) |
+        (Media.output_path == str(full_photo_path_lookup))
+    ).first()
+    
     errors = []
     
     # 刪除檔案（如果存在）
@@ -1794,9 +1883,11 @@ def delete_exhibition_photo(exhibition_id, photo_id):
             except Exception as e:
                 errors.append(f"無法刪除縮圖: {e}")
     
-    # 刪除資料庫記錄
+    # 刪除資料庫記錄（ExhibitionPhoto 與對應的 Media，媒體管理才不會殘留）
     try:
         db.session.delete(photo)
+        if linked_media:
+            db.session.delete(linked_media)
         db.session.commit()
         
         if errors:
@@ -1807,7 +1898,7 @@ def delete_exhibition_photo(exhibition_id, photo_id):
         db.session.rollback()
         flash(f"刪除失敗：{str(e)}", "error")
     
-    return redirect(url_for("exhibition_detail", exhibition_id=exhibition_id))
+    return redirect(url_for("exhibition_detail", exhibition_public_id=exhibition.public_id))
 
 
 # ==================== 媒體管理 ====================
@@ -1853,25 +1944,23 @@ def media_list():
                           uncategorized_count=uncategorized_count)
 
 
-@app.route("/media/exhibition/<int:exhibition_id>")
+@app.route("/media/exhibition/<exhibition_public_id>")
 @login_required
-def media_by_exhibition(exhibition_id):
+def media_by_exhibition(exhibition_public_id):
     """
-    顯示特定展覽的媒體檔案
+    顯示特定展覽的媒體檔案（對外使用 public_id）
     超級管理員可以看到該展覽的所有媒體檔案，一般用戶只能看到自己的
     """
-    # 取得展覽資訊
-    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
     
-    # 超級管理員可以看到該展覽的所有媒體檔案，一般用戶只能看到自己的
     if current_user.is_super_admin_role():
         media_list = Media.query.filter_by(
-            exhibition_id=exhibition_id
+            exhibition_id=exhibition.id
         ).order_by(Media.created_at.desc()).all()
     else:
         media_list = Media.query.filter_by(
             user_id=current_user.id,
-            exhibition_id=exhibition_id
+            exhibition_id=exhibition.id
         ).order_by(Media.created_at.desc()).all()
     
     # 載入 user 關聯（用於顯示上傳者資訊）並計算預覽圖 URL
@@ -2105,8 +2194,8 @@ def delete_media(media_id):
     if not current_user.is_super_admin_role() and media.user_id != current_user.id:
         abort(403, "您沒有權限刪除此檔案")
     
-    # 保存展覽 ID（用於重定向）
-    exhibition_id = media.exhibition_id
+    # 保存展覽（用於重定向，對外使用 public_id）
+    exhibition = db.session.get(Exhibition, media.exhibition_id) if media.exhibition_id else None
     
     success, error = _delete_media_file(media_id)
     
@@ -2117,11 +2206,9 @@ def delete_media(media_id):
         db.session.rollback()
         flash(f"刪除失敗：{error}", "error")
     
-    # 重定向回原來的頁面
-    if exhibition_id:
-        return redirect(url_for("media_by_exhibition", exhibition_id=exhibition_id))
-    else:
-        return redirect(url_for("media_uncategorized"))
+    if exhibition:
+        return redirect(url_for("media_by_exhibition", exhibition_public_id=exhibition.public_id))
+    return redirect(url_for("media_uncategorized"))
 
 
 @app.route("/media/bulk-delete", methods=["POST"])
@@ -2132,23 +2219,26 @@ def bulk_delete_media():
     超級管理員可以刪除任何檔案，一般用戶只能刪除自己的檔案
     """
     media_ids_str = request.form.get("media_ids", "")
-    exhibition_id = request.form.get("exhibition_id", type=int)
+    exhibition_public_id = request.form.get("exhibition_public_id", "").strip()
+    if not exhibition_public_id:
+        ex_id = request.form.get("exhibition_id", type=int)
+        if ex_id:
+            ex = db.session.get(Exhibition, ex_id)
+            exhibition_public_id = ex.public_id if ex else ""
     
     if not media_ids_str:
         flash("未選擇任何檔案", "error")
-        if exhibition_id:
-            return redirect(url_for("media_by_exhibition", exhibition_id=exhibition_id))
-        else:
-            return redirect(url_for("media_uncategorized"))
+        if exhibition_public_id:
+            return redirect(url_for("media_by_exhibition", exhibition_public_id=exhibition_public_id))
+        return redirect(url_for("media_uncategorized"))
     
     media_ids = [mid.strip() for mid in media_ids_str.split(",") if mid.strip()]
     
     if not media_ids:
         flash("未選擇任何檔案", "error")
-        if exhibition_id:
-            return redirect(url_for("media_by_exhibition", exhibition_id=exhibition_id))
-        else:
-            return redirect(url_for("media_uncategorized"))
+        if exhibition_public_id:
+            return redirect(url_for("media_by_exhibition", exhibition_public_id=exhibition_public_id))
+        return redirect(url_for("media_uncategorized"))
     
     success_count = 0
     error_count = 0
@@ -2175,11 +2265,9 @@ def bulk_delete_media():
     else:
         flash(f"成功刪除 {success_count} 個檔案，{error_count} 個失敗", "error")
     
-    # 重定向回原來的頁面
-    if exhibition_id:
-        return redirect(url_for("media_by_exhibition", exhibition_id=exhibition_id))
-    else:
-        return redirect(url_for("media_uncategorized"))
+    if exhibition_public_id:
+        return redirect(url_for("media_by_exhibition", exhibition_public_id=exhibition_public_id))
+    return redirect(url_for("media_uncategorized"))
 
 
 @app.route("/media/<media_id>/download")

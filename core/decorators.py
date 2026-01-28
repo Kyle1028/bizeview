@@ -74,15 +74,14 @@ def can_manage_exhibition(exhibition_id_param='exhibition_id'):
                 flash("請先登入以訪問此頁面", "warning")
                 return redirect(url_for("auth.login"))
             
-            # 從 kwargs 取得展覽 ID（Flask 路由參數會自動傳入 kwargs）
+            # 從 kwargs 取得展覽 public_id（對外不可猜）
             from core.models import Exhibition
             
-            exhibition_id = kwargs.get(exhibition_id_param)
-            if not exhibition_id:
-                abort(400, "缺少展覽 ID")
+            exhibition_public_id = kwargs.get(exhibition_id_param)
+            if not exhibition_public_id:
+                abort(400, "缺少展覽識別")
             
-            # 查詢展覽
-            exhibition = Exhibition.query.get_or_404(exhibition_id)
+            exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
             
             # 檢查權限
             if not current_user.can_manage_exhibition(exhibition):

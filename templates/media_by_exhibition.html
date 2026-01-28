@@ -521,7 +521,7 @@
             
             <form id="bulkDeleteForm" method="POST" action="{{ url_for('bulk_delete_media') }}" style="display: none;">
                 <input type="hidden" name="media_ids" id="bulkDeleteMediaIds">
-                <input type="hidden" name="exhibition_id" value="{% if exhibition %}{{ exhibition.id }}{% endif %}">
+                <input type="hidden" name="exhibition_public_id" value="{% if exhibition %}{{ exhibition.public_id }}{% endif %}">
             </form>
             
             <div class="media-grid">

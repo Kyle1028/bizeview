@@ -6,7 +6,7 @@
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from core.models import db, User
+from core.models import db, User, _public_id_user
 import re
 
 # 建立認證，所有認證相關的路由都以 /auth 開頭
@@ -124,7 +124,9 @@ def register():
             new_user.set_password(password)  # 設定加密密碼
             
             db.session.add(new_user)  # 加入資料庫
-            db.session.commit()  # 確認儲存
+            db.session.commit()  # 確認儲存以取得 id
+            new_user.public_id = _public_id_user(new_user.id)  # 6+11位序號+8碼隨機
+            db.session.commit()
             
             flash("註冊成功！現在可以登入了", "success")
             return redirect(url_for("auth.login"))

@@ -9,7 +9,7 @@ from flask_login import login_required, current_user
 from pathlib import Path
 from werkzeug.utils import secure_filename
 
-from core.models import db, User, Exhibition, ExhibitionPhoto
+from core.models import db, User, Exhibition, ExhibitionPhoto, _public_id_exhibition
 from core.decorators import admin_required, super_admin_required, can_manage_exhibition
 
 # 建立管理員藍圖，所有管理員相關的路由都以 /admin 開頭
@@ -125,6 +125,8 @@ def create_exhibition():
             
             db.session.add(exhibition)
             db.session.commit()
+            exhibition.public_id = _public_id_exhibition(exhibition.id)  # 7+9位序號+6碼隨機
+            db.session.commit()
             
             flash("展覽創建成功！", "success")
             return redirect(url_for("admin.exhibitions_list"))
@@ -138,15 +140,15 @@ def create_exhibition():
     return render_template("admin/exhibition_form.html", mode="create")
 
 
-@admin_bp.route("/exhibitions/<int:exhibition_id>/edit", methods=["GET", "POST"])
-@can_manage_exhibition('exhibition_id')
-def edit_exhibition(exhibition_id):
+@admin_bp.route("/exhibitions/<exhibition_public_id>/edit", methods=["GET", "POST"])
+@can_manage_exhibition('exhibition_public_id')
+def edit_exhibition(exhibition_public_id):
     """
-    編輯展覽
+    編輯展覽（對外使用 public_id）
     GET：顯示編輯表單
     POST：處理表單並更新展覽
     """
-    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
     
     # 再次確認權限（裝飾器已經檢查過，這裡是雙重確認）
     if not current_user.can_manage_exhibition(exhibition):
@@ -232,14 +234,14 @@ def edit_exhibition(exhibition_id):
     return render_template("admin/exhibition_form.html", mode="edit", exhibition=exhibition)
 
 
-@admin_bp.route("/exhibitions/<int:exhibition_id>/delete", methods=["POST"])
-@can_manage_exhibition('exhibition_id')
-def delete_exhibition(exhibition_id):
+@admin_bp.route("/exhibitions/<exhibition_public_id>/delete", methods=["POST"])
+@can_manage_exhibition('exhibition_public_id')
+def delete_exhibition(exhibition_public_id):
     """
-    刪除展覽
+    刪除展覽（對外使用 public_id）
     只有展覽創建者或超級管理員可以刪除
     """
-    exhibition = Exhibition.query.get_or_404(exhibition_id)
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
     
     # 再次確認權限
     if not current_user.can_manage_exhibition(exhibition):
@@ -271,14 +273,14 @@ def users_list():
     return render_template("admin/users_list.html", users=users)
 
 
-@admin_bp.route("/users/<int:user_id>/set_role", methods=["POST"])
+@admin_bp.route("/users/<user_public_id>/set_role", methods=["POST"])
 @super_admin_required
-def set_user_role(user_id):
+def set_user_role(user_public_id):
     """
-    設置用戶角色
+    設置用戶角色（對外使用 public_id）
     只有超級管理員可以設置其他用戶的角色
     """
-    user = User.query.get_or_404(user_id)
+    user = User.query.filter_by(public_id=user_public_id).first_or_404()
     
     # 不能修改自己的角色
     if user.id == current_user.id:
@@ -308,14 +310,14 @@ def set_user_role(user_id):
     return redirect(url_for("admin.users_list"))
 
 
-@admin_bp.route("/users/<int:user_id>/toggle_active", methods=["POST"])
+@admin_bp.route("/users/<user_public_id>/toggle_active", methods=["POST"])
 @super_admin_required
-def toggle_user_active(user_id):
+def toggle_user_active(user_public_id):
     """
-    啟用/停用用戶帳號
+    啟用/停用用戶帳號（對外使用 public_id）
     只有超級管理員可以操作
     """
-    user = User.query.get_or_404(user_id)
+    user = User.query.filter_by(public_id=user_public_id).first_or_404()
     
     # 不能停用自己的帳號
     if user.id == current_user.id:

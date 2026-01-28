@@ -376,18 +376,18 @@
         {% if exhibitions_with_media or uncategorized_count > 0 %}
             <div class="exhibitions-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
                 {% for item in exhibitions_with_media %}
-                    <a href="{{ url_for('media_by_exhibition', exhibition_id=item.exhibition.id) }}" 
+                    <a href="{{ url_for('media_by_exhibition', exhibition_public_id=item.exhibition.public_id) }}" 
                        class="exhibition-card" 
                        style="text-decoration: none; color: inherit; display: block; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08); transition: all 0.3s;">
                         <div class="exhibition-cover" style="width: 100%; height: 200px; overflow: hidden; background: #f0f0f0;">
                             {% if item.exhibition.cover_image %}
-                                <img src="{{ url_for('exhibition_cover', exhibition_id=item.exhibition.id) }}" 
+                                <img src="{{ url_for('exhibition_cover', exhibition_public_id=item.exhibition.public_id) }}" 
                                      alt="{{ item.exhibition.title }}" 
                                      style="width: 100%; height: 100%; object-fit: cover;">
                             {% else %}
                                 {% set first_photo = item.exhibition.photos|first %}
                                 {% if first_photo %}
-                                    <img src="{{ url_for('exhibition_photo', exhibition_id=item.exhibition.id, photo_id=first_photo.id) }}" 
+                                    <img src="{{ url_for('exhibition_photo', exhibition_public_id=item.exhibition.public_id, photo_id=first_photo.id) }}" 
                                          alt="{{ item.exhibition.title }}" 
                                          style="width: 100%; height: 100%; object-fit: cover;">
                                 {% else %}

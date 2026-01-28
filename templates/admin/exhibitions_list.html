@@ -419,11 +419,11 @@
                     <div class="exhibition-card">
                         <div class="exhibition-cover">
                             {% if exhibition.cover_image %}
-                                <img src="{{ url_for('exhibition_cover', exhibition_id=exhibition.id) }}" alt="{{ exhibition.title }}">
+                                <img src="{{ url_for('exhibition_cover', exhibition_public_id=exhibition.public_id) }}" alt="{{ exhibition.title }}">
                             {% else %}
                                 {% set first_photo = exhibition.photos|first %}
                                 {% if first_photo %}
-                                    <img src="{{ url_for('exhibition_photo', exhibition_id=exhibition.id, photo_id=first_photo.id) }}" alt="{{ exhibition.title }}">
+                                    <img src="{{ url_for('exhibition_photo', exhibition_public_id=exhibition.public_id, photo_id=first_photo.id) }}" alt="{{ exhibition.title }}">
                                 {% else %}
                                     <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #999;">
                                         {{ _('無封面圖片') }}
@@ -438,8 +438,8 @@
                                     {{ _('已發布') if exhibition.is_published else _('草稿') }}
                                 </span>
                                 <div class="exhibition-actions">
-                                    <a href="{{ url_for('admin.edit_exhibition', exhibition_id=exhibition.id) }}" class="btn btn-edit">{{ _('編輯') }}</a>
-                                    <form method="POST" action="{{ url_for('admin.delete_exhibition', exhibition_id=exhibition.id) }}" style="display: inline;" onsubmit="return confirm('{{ _('確定要刪除此展覽嗎？') }}');">
+                                    <a href="{{ url_for('admin.edit_exhibition', exhibition_public_id=exhibition.public_id) }}" class="btn btn-edit">{{ _('編輯') }}</a>
+                                    <form method="POST" action="{{ url_for('admin.delete_exhibition', exhibition_public_id=exhibition.public_id) }}" style="display: inline;" onsubmit="return confirm('{{ _('確定要刪除此展覽嗎？') }}');">
                                         <button type="submit" class="btn btn-delete">{{ _('刪除') }}</button>
                                     </form>
                                 </div>

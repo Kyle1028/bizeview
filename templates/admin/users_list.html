@@ -461,14 +461,14 @@
                         <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else '-' }}</td>
                         <td>
                             {% if user.id != current_user.id %}
-                                <form class="action-form" method="POST" action="{{ url_for('admin.set_user_role', user_id=user.id) }}">
+                                <form class="action-form" method="POST" action="{{ url_for('admin.set_user_role', user_public_id=user.public_id) }}">
                                     <select name="role" onchange="this.form.submit()">
                                         <option value="USER" {% if user.role == 'USER' %}selected{% endif %}>{{ _('一般使用者') }}</option>
                                         <option value="ADMIN" {% if user.role == 'ADMIN' %}selected{% endif %}>{{ _('管理員') }}</option>
                                         <option value="SUPER_ADMIN" {% if user.role == 'SUPER_ADMIN' %}selected{% endif %}>{{ _('超級管理員') }}</option>
                                     </select>
                                 </form>
-                                <form class="action-form" method="POST" action="{{ url_for('admin.toggle_user_active', user_id=user.id) }}">
+                                <form class="action-form" method="POST" action="{{ url_for('admin.toggle_user_active', user_public_id=user.public_id) }}">
                                     <button type="submit" class="btn {% if user.is_active %}btn-danger{% else %}btn-success{% endif %}">
                                         {{ _('停用') if user.is_active else _('啟用') }}
                                     </button>

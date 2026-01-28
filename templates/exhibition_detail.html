@@ -338,11 +338,13 @@
         }
         
         .action-buttons {
-          flex-direction: column;
+          flex-direction: row;
+          flex-wrap: wrap;
+          align-items: flex-start;
         }
         
-        .action-buttons .btn {
-          width: 100%;
+        .action-buttons .btn-primary {
+          width: auto;
         }
       }
     </style>
@@ -416,10 +418,10 @@
         </div>
         {% if current_user.is_authenticated %}
         <div class="action-buttons">
-          <a href="{{ url_for('upload_page', exhibition_id=exhibition.id) }}" class="btn-primary">
+          <a href="{{ url_for('upload_page', exhibition_public_id=exhibition.public_id) }}" class="btn-primary">
             {{ _('照片影片隱私處理') }}
           </a>
-          <form action="{{ url_for('upload_to_exhibition', exhibition_id=exhibition.id) }}" method="POST" enctype="multipart/form-data" style="display: inline-block;">
+          <form action="{{ url_for('upload_to_exhibition', exhibition_public_id=exhibition.public_id) }}" method="POST" enctype="multipart/form-data" style="display: inline-block;">
             <input type="file" name="media" accept="image/*,video/*" required 
                    onchange="this.form.submit()" 
                    style="display: none;" 
@@ -439,7 +441,7 @@
             {% set is_video = photo_ext in ['mp4', 'mov', 'avi', 'webm', 'mkv'] %}
             <div class="photo-card" {% if not is_video %}onclick="openPhotoModal({{ photo.id }})"{% endif %}>
               {% if current_user.is_authenticated and current_user.can_manage_exhibition(exhibition) %}
-                <form method="POST" action="{{ url_for('delete_exhibition_photo', exhibition_id=exhibition.id, photo_id=photo.id) }}" 
+                <form method="POST" action="{{ url_for('delete_exhibition_photo', exhibition_public_id=exhibition.public_id, photo_id=photo.id) }}" 
                       style="position: absolute; top: 10px; right: 10px; z-index: 10;"
                       onsubmit="return confirm('{{ _('確定要刪除此照片嗎？') }}');">
                   <button type="submit" style="background: #e74c3c; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
@@ -449,11 +451,11 @@
               {% endif %}
               {% if is_video %}
                 <video class="photo-image" controls preload="metadata">
-                  <source src="{{ url_for('exhibition_photo', exhibition_id=exhibition.id, photo_id=photo.id) }}" type="video/{{ photo_ext }}">
+                  <source src="{{ url_for('exhibition_photo', exhibition_public_id=exhibition.public_id, photo_id=photo.id) }}" type="video/{{ photo_ext }}">
                   {{ _('您的瀏覽器不支援影片播放') }}
                 </video>
               {% else %}
-                <img src="{{ url_for('exhibition_photo', exhibition_id=exhibition.id, photo_id=photo.id) }}" 
+                <img src="{{ url_for('exhibition_photo', exhibition_public_id=exhibition.public_id, photo_id=photo.id) }}" 
                      alt="{{ photo.title or '照片' }}" 
                      class="photo-image"
                      loading="lazy">

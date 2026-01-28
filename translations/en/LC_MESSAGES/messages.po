@@ -285,6 +285,21 @@ msgstr "No Exhibitions Available"
 msgid "展覽將陸續上線，敬請期待"
 msgstr "Exhibitions will be added soon, stay tuned"
 
+msgid "搜尋"
+msgstr "Search"
+
+msgid "搜尋展覽標題或內容"
+msgstr "Search exhibition title or content"
+
+msgid "找不到符合的展覽"
+msgstr "No exhibitions match your search"
+
+msgid "請嘗試其他關鍵字，或"
+msgstr "Try different keywords, or"
+
+msgid "查看全部展覽"
+msgstr "View all exhibitions"
+
 msgid "返回展覽列表"
 msgstr "Back to Exhibitions"
 

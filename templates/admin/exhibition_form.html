@@ -384,7 +384,7 @@
                     <div class="help-text">{{ _('支援 JPG、PNG、WEBP 格式') }}</div>
                     {% if exhibition and exhibition.cover_image %}
                         <div class="help-text" style="margin-top: 10px;">
-                            {{ _('目前封面：') }}<a href="{{ url_for('exhibition_cover', exhibition_id=exhibition.id) }}" target="_blank">{{ _('查看') }}</a>
+                            {{ _('目前封面：') }}<a href="{{ url_for('exhibition_cover', exhibition_public_id=exhibition.public_id) }}" target="_blank">{{ _('查看') }}</a>
                         </div>
                     {% endif %}
                 </div>
