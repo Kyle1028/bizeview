@@ -253,6 +253,10 @@ def _rename_media_ids(old_id: str, new_id: str, media_record: Media):
     for p in PREVIEW_DIR.glob(f"{old_id}_preview.*"):
         new_p = p.parent / f"{new_id}_preview{p.suffix}"
         p.rename(new_p)
+    # 2b. 預覽目錄下的人臉截圖（{media_id}_face_0.jpg 等）
+    for p in PREVIEW_DIR.glob(f"{old_id}_face_*.jpg"):
+        rest = p.name[len(old_id) :]
+        p.rename(p.parent / f"{new_id}{rest}")
     # 3. metadata（faces.json、face crops）
     j = METADATA_DIR / f"{old_id}_faces.json"
     if j.exists():
@@ -1933,6 +1937,52 @@ def delete_exhibition_photo(exhibition_public_id, photo_id):
             except Exception as e:
                 errors.append(f"無法刪除縮圖: {e}")
     
+    # 若有對應 Media，一併刪除其上傳/處理檔與 preview、人臉相關檔案
+    if linked_media:
+        media_id = linked_media.media_id
+        if linked_media.upload_path:
+            up = Path(linked_media.upload_path)
+            if not up.is_absolute():
+                up = BASE_DIR / up
+            if up.exists():
+                try:
+                    up.unlink()
+                except Exception as e:
+                    errors.append(f"無法刪除上傳檔案: {e}")
+        if linked_media.output_path:
+            op = Path(linked_media.output_path)
+            if not op.is_absolute():
+                op = BASE_DIR / op
+            if op.exists():
+                try:
+                    op.unlink()
+                except Exception as e:
+                    errors.append(f"無法刪除處理檔案: {e}")
+        try:
+            for preview_file in PREVIEW_DIR.glob(f"{media_id}_preview.*"):
+                if preview_file.exists():
+                    try:
+                        preview_file.unlink()
+                    except Exception as e:
+                        errors.append(f"無法刪除預覽圖 {preview_file.name}: {e}")
+        except Exception as e:
+            errors.append(f"查找預覽圖時出錯: {e}")
+        try:
+            for crop_file in PREVIEW_DIR.glob(f"{media_id}_face_*.jpg"):
+                if crop_file.exists():
+                    try:
+                        crop_file.unlink()
+                    except Exception as e:
+                        errors.append(f"無法刪除人臉截圖 {crop_file.name}: {e}")
+        except Exception as e:
+            errors.append(f"查找人臉截圖時出錯: {e}")
+        faces_json = METADATA_DIR / f"{media_id}_faces.json"
+        if faces_json.exists():
+            try:
+                faces_json.unlink()
+            except Exception as e:
+                errors.append(f"無法刪除人臉資料: {e}")
+    
     # 刪除資料庫記錄（ExhibitionPhoto 與對應的 Media，媒體管理才不會殘留）
     try:
         db.session.delete(photo)
@@ -2155,18 +2205,22 @@ def _delete_media_file(media_id):
         
         errors = []
         
-        # 刪除原始上傳檔案
+        # 刪除原始上傳檔案（路徑可能為相對，需依 BASE_DIR 解析）
         if media.upload_path:
             upload_file = Path(media.upload_path)
+            if not upload_file.is_absolute():
+                upload_file = BASE_DIR / upload_file
             if upload_file.exists():
                 try:
                     upload_file.unlink()
                 except Exception as e:
                     errors.append(f"無法刪除上傳檔案: {e}")
         
-        # 刪除處理後的檔案
+        # 刪除處理後的檔案（路徑可能為相對，需依 BASE_DIR 解析）
         if media.output_path:
             output_file = Path(media.output_path)
+            if not output_file.is_absolute():
+                output_file = BASE_DIR / output_file
             if output_file.exists():
                 try:
                     output_file.unlink()

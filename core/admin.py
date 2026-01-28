@@ -9,7 +9,7 @@ from flask_login import login_required, current_user
 from pathlib import Path
 from werkzeug.utils import secure_filename
 
-from core.models import db, User, Exhibition, ExhibitionPhoto, _public_id_exhibition
+from core.models import db, User, Exhibition, ExhibitionPhoto, Media, _public_id_exhibition
 from core.decorators import admin_required, super_admin_required, can_manage_exhibition
 
 # 建立管理員藍圖，所有管理員相關的路由都以 /admin 開頭
@@ -18,6 +18,8 @@ admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 # 目錄設定（避免循環導入，直接在此定義）
 BASE_DIR = Path(__file__).resolve().parent.parent  # 專案根目錄（core 的上一層）
 EXHIBITION_DIR = BASE_DIR / "exhibitions"  # 展覽照片目錄
+PREVIEW_DIR = BASE_DIR / "previews"  # 預覽圖
+METADATA_DIR = BASE_DIR / "metadata"  # 人臉資料
 
 
 def init_admin(app):
@@ -248,11 +250,84 @@ def delete_exhibition(exhibition_public_id):
         abort(403, "您沒有權限刪除此展覽")
     
     try:
-        # 刪除展覽（相關的照片會因為 cascade 設定自動刪除）
+        errors = []
+        
+        # 1. 刪除展覽照片的實體檔案（photo_path、thumbnail_path）
+        for photo in list(exhibition.photos):
+            if photo.photo_path:
+                p = Path(photo.photo_path)
+                if not p.is_absolute():
+                    p = BASE_DIR / p
+                if p.exists():
+                    try:
+                        p.unlink()
+                    except Exception as e:
+                        errors.append(f"無法刪除照片檔案 {p.name}: {e}")
+            if photo.thumbnail_path and photo.thumbnail_path != photo.photo_path:
+                tp = Path(photo.thumbnail_path)
+                if not tp.is_absolute():
+                    tp = BASE_DIR / tp
+                if tp.exists():
+                    try:
+                        tp.unlink()
+                    except Exception as e:
+                        errors.append(f"無法刪除縮圖 {tp.name}: {e}")
+        
+        # 2. 刪除該展覽下所有 Media 的實體檔案（uploads、outputs、previews、metadata）
+        for media in list(exhibition.media_files):
+            media_id = media.media_id
+            if media.upload_path:
+                up = Path(media.upload_path)
+                if not up.is_absolute():
+                    up = BASE_DIR / up
+                if up.exists():
+                    try:
+                        up.unlink()
+                    except Exception as e:
+                        errors.append(f"無法刪除上傳檔案 {up.name}: {e}")
+            if media.output_path:
+                op = Path(media.output_path)
+                if not op.is_absolute():
+                    op = BASE_DIR / op
+                if op.exists():
+                    try:
+                        op.unlink()
+                    except Exception as e:
+                        errors.append(f"無法刪除處理檔案 {op.name}: {e}")
+            for preview_file in PREVIEW_DIR.glob(f"{media_id}_preview.*"):
+                if preview_file.exists():
+                    try:
+                        preview_file.unlink()
+                    except Exception as e:
+                        errors.append(f"無法刪除預覽圖 {preview_file.name}: {e}")
+            for crop_file in PREVIEW_DIR.glob(f"{media_id}_face_*.jpg"):
+                if crop_file.exists():
+                    try:
+                        crop_file.unlink()
+                    except Exception as e:
+                        errors.append(f"無法刪除人臉截圖 {crop_file.name}: {e}")
+            faces_json = METADATA_DIR / f"{media_id}_faces.json"
+            if faces_json.exists():
+                try:
+                    faces_json.unlink()
+                except Exception as e:
+                    errors.append(f"無法刪除人臉資料: {e}")
+            for crop_file in METADATA_DIR.glob(f"{media_id}_face_*.jpg"):
+                if crop_file.exists():
+                    try:
+                        crop_file.unlink()
+                    except Exception as e:
+                        errors.append(f"無法刪除人臉截圖 {crop_file.name}: {e}")
+            db.session.delete(media)
+        
+        # 3. 刪除展覽（cascade 會一併刪除 ExhibitionPhoto）
         db.session.delete(exhibition)
         db.session.commit()
         
-        flash("展覽已刪除", "success")
+        if errors:
+            flash("展覽已刪除，但部分檔案刪除失敗: " + "; ".join(errors[:3]) + ("..." if len(errors) > 3 else ""), "warning")
+        else:
+            flash("展覽已刪除", "success")
     except Exception as e:
         db.session.rollback()
         flash(f"刪除展覽失敗：{str(e)}", "error")
