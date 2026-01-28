@@ -541,7 +541,7 @@
                                class="media-checkbox" 
                                value="{{ media.media_id }}"
                                onchange="updateBulkActions()"
-                               {% if not (current_user.is_super_admin_role() or media.user_id == current_user.id) %}disabled{% endif %}>
+                               {% if not (current_user.is_super_admin_role() or media.user_id == current_user.id or (exhibition and exhibition.creator_id == current_user.id)) %}disabled{% endif %}>
                         <div style="position: relative;">
                             {% if media.preview_url %}
                                 <img src="{{ media.preview_url }}" 
@@ -585,7 +585,8 @@
                                 {{ media.created_at.strftime('%Y-%m-%d %H:%M') if media.created_at else '-' }}
                             </div>
                             <div class="media-actions">
-                                {% if media.status == 'uploaded' %}
+                                {% set can_process = media.status == 'uploaded' and (current_user.is_super_admin_role() or media.user_id == current_user.id or (exhibition and exhibition.creator_id == current_user.id)) %}
+                                {% if can_process %}
                                     <a href="{{ url_for('options', media_id=media.media_id) }}" class="btn btn-primary">
                                         {{ _('處理') }}
                                     </a>
@@ -600,7 +601,8 @@
                                 <a href="{{ url_for('download_media', media_id=media.media_id) }}" class="btn btn-primary">
                                     {{ _('下載原始') }}
                                 </a>
-                                {% if current_user.is_super_admin_role() or media.user_id == current_user.id %}
+                                {% set can_delete = current_user.is_super_admin_role() or media.user_id == current_user.id or (exhibition and exhibition.creator_id == current_user.id) %}
+                                {% if can_delete %}
                                 <form method="POST" action="{{ url_for('delete_media', media_id=media.media_id) }}" style="display: inline;" 
                                       onsubmit="return confirm('{{ _('確定要刪除此檔案嗎？') }}');">
                                     <button type="submit" class="btn btn-danger">{{ _('刪除') }}</button>

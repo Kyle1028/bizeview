@@ -446,6 +446,9 @@
               {{ _('上傳照片/影片') }}
             </label>
           </form>
+          <a href="{{ url_for('media_by_exhibition', exhibition_public_id=exhibition.public_id) }}" class="btn-primary" style="background: #28a745;">
+            {{ _('媒體管理') }}
+          </a>
         </div>
         {% endif %}
       </div>

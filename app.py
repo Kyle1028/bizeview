@@ -1205,7 +1205,18 @@ def options(media_id):
     if not media:
         abort(404, "找不到該檔案")
     
-    if not current_user.is_super_admin_role() and media.user_id != current_user.id:
+    # 權限檢查：超級管理員、媒體上傳者、或媒體所屬展覽的創辦人可以處理
+    has_permission = False
+    if current_user.is_super_admin_role():
+        has_permission = True
+    elif media.user_id == current_user.id:
+        has_permission = True
+    elif media.exhibition_id:
+        exhibition = db.session.get(Exhibition, media.exhibition_id)
+        if exhibition and current_user.can_manage_exhibition(exhibition):
+            has_permission = True
+    
+    if not has_permission:
         abort(403, "您沒有權限查看此檔案")
     
     faces_json_path = METADATA_DIR / f"{media_id}_faces.json"
@@ -1569,8 +1580,18 @@ def result(media_id):
     if not media:
         abort(404, "找不到該檔案")
     
-    # 權限檢查：超級管理員可以查看任何檔案，一般用戶只能查看自己的
-    if not current_user.is_super_admin_role() and media.user_id != current_user.id:
+    # 權限檢查：超級管理員、媒體上傳者、或媒體所屬展覽的創辦人可以查看
+    has_permission = False
+    if current_user.is_super_admin_role():
+        has_permission = True
+    elif media.user_id == current_user.id:
+        has_permission = True
+    elif media.exhibition_id:
+        exhibition = db.session.get(Exhibition, media.exhibition_id)
+        if exhibition and current_user.can_manage_exhibition(exhibition):
+            has_permission = True
+    
+    if not has_permission:
         abort(403, "您沒有權限查看此檔案")
     
     if media.status != "processed" or not media.output_path:
@@ -1635,7 +1656,24 @@ def process():
 
     # 優先從 DB 的 upload_path 取得路徑，避免大量檔案時 rglob 掃描整棵目錄樹
     media_record_for_path = Media.query.filter_by(media_id=media_id).first()
-    if media_record_for_path and media_record_for_path.upload_path:
+    if not media_record_for_path:
+        abort(404, "找不到該檔案")
+    
+    # 權限檢查：超級管理員、媒體上傳者、或媒體所屬展覽的創辦人可以處理
+    has_permission = False
+    if current_user.is_super_admin_role():
+        has_permission = True
+    elif media_record_for_path.user_id == current_user.id:
+        has_permission = True
+    elif media_record_for_path.exhibition_id:
+        exhibition = db.session.get(Exhibition, media_record_for_path.exhibition_id)
+        if exhibition and current_user.can_manage_exhibition(exhibition):
+            has_permission = True
+    
+    if not has_permission:
+        abort(403, "您沒有權限處理此檔案")
+    
+    if media_record_for_path.upload_path:
         up = Path(media_record_for_path.upload_path)
         src_path = up if up.is_absolute() else BASE_DIR / up
         if not src_path.exists():
@@ -2014,29 +2052,63 @@ def media_list():
     顯示當前用戶有媒體檔案的展覽列表
     超級管理員可以看到所有展覽
     """
-    # 超級管理員可以看到所有媒體檔案，一般用戶只能看到自己的
-    if current_user.is_super_admin_role():
-        all_media = Media.query.all()
-    else:
-        all_media = Media.query.filter_by(user_id=current_user.id).all()
-    
     # 統計每個展覽的媒體數量
     exhibition_stats = {}
     uncategorized_count = 0
     
-    for media in all_media:
-        if media.exhibition_id:
-            if media.exhibition_id not in exhibition_stats:
-                exhibition = db.session.get(Exhibition, media.exhibition_id)
-                if exhibition:
-                    exhibition_stats[media.exhibition_id] = {
-                        'exhibition': exhibition,
-                        'count': 0
-                    }
-            if media.exhibition_id in exhibition_stats:
-                exhibition_stats[media.exhibition_id]['count'] += 1
-        else:
-            uncategorized_count += 1
+    if current_user.is_super_admin_role():
+        # 超級管理員可以看到所有媒體檔案
+        all_media = Media.query.all()
+        for media in all_media:
+            if media.exhibition_id:
+                if media.exhibition_id not in exhibition_stats:
+                    exhibition = db.session.get(Exhibition, media.exhibition_id)
+                    if exhibition:
+                        exhibition_stats[media.exhibition_id] = {
+                            'exhibition': exhibition,
+                            'count': 0
+                        }
+                if media.exhibition_id in exhibition_stats:
+                    exhibition_stats[media.exhibition_id]['count'] += 1
+            else:
+                uncategorized_count += 1
+    else:
+        # 一般用戶：統計自己上傳的媒體 + 自己創辦的展覽中的所有媒體
+        # 1. 先找出所有需要顯示的展覽：自己上傳的媒體所屬展覽 + 自己創辦的展覽
+        own_media = Media.query.filter_by(user_id=current_user.id).all()
+        exhibitions_to_show = set()
+        
+        for media in own_media:
+            if media.exhibition_id:
+                exhibitions_to_show.add(media.exhibition_id)
+            else:
+                uncategorized_count += 1
+        
+        # 加入自己創辦的展覽
+        own_exhibitions = Exhibition.query.filter_by(creator_id=current_user.id).all()
+        for exhibition in own_exhibitions:
+            exhibitions_to_show.add(exhibition.id)
+        
+        # 2. 對每個展覽統計媒體數量
+        for ex_id in exhibitions_to_show:
+            exhibition = db.session.get(Exhibition, ex_id)
+            if not exhibition:
+                continue
+            
+            # 如果是創辦人，統計該展覽的所有媒體；否則只統計自己的媒體
+            if exhibition.creator_id == current_user.id:
+                media_count = Media.query.filter_by(exhibition_id=ex_id).count()
+            else:
+                media_count = Media.query.filter_by(
+                    exhibition_id=ex_id,
+                    user_id=current_user.id
+                ).count()
+            
+            if media_count > 0:
+                exhibition_stats[ex_id] = {
+                    'exhibition': exhibition,
+                    'count': media_count
+                }
     
     # 轉換為列表並排序
     exhibitions_with_media = list(exhibition_stats.values())
@@ -2052,15 +2124,17 @@ def media_list():
 def media_by_exhibition(exhibition_public_id):
     """
     顯示特定展覽的媒體檔案（對外使用 public_id）
-    超級管理員可以看到該展覽的所有媒體檔案，一般用戶只能看到自己的
+    超級管理員和展覽創辦人可以看到該展覽的所有媒體檔案，一般用戶只能看到自己的
     """
     exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
     
-    if current_user.is_super_admin_role():
+    if current_user.is_super_admin_role() or current_user.can_manage_exhibition(exhibition):
+        # 超級管理員或展覽創辦人可以看到該展覽的所有媒體
         media_list = Media.query.filter_by(
             exhibition_id=exhibition.id
         ).order_by(Media.created_at.desc()).all()
     else:
+        # 一般用戶只能看到自己上傳的媒體
         media_list = Media.query.filter_by(
             user_id=current_user.id,
             exhibition_id=exhibition.id
@@ -2202,8 +2276,18 @@ def _delete_media_file(media_id):
         if not media:
             return False, f"找不到檔案 {media_id}"
         
-        # 權限檢查：超級管理員可以刪除任何檔案，一般用戶只能刪除自己的
-        if not current_user.is_super_admin_role() and media.user_id != current_user.id:
+        # 權限檢查：超級管理員、媒體上傳者、或媒體所屬展覽的創辦人可以刪除
+        has_permission = False
+        if current_user.is_super_admin_role():
+            has_permission = True
+        elif media.user_id == current_user.id:
+            has_permission = True
+        elif media.exhibition_id:
+            exhibition = db.session.get(Exhibition, media.exhibition_id)
+            if exhibition and current_user.can_manage_exhibition(exhibition):
+                has_permission = True
+        
+        if not has_permission:
             return False, f"沒有權限刪除檔案 {media_id}"
         
         errors = []
@@ -2297,8 +2381,18 @@ def delete_media(media_id):
     if not media:
         abort(404, "找不到該檔案")
     
-    # 權限檢查：超級管理員可以刪除任何檔案，一般用戶只能刪除自己的
-    if not current_user.is_super_admin_role() and media.user_id != current_user.id:
+    # 權限檢查：超級管理員、媒體上傳者、或媒體所屬展覽的創辦人可以刪除
+    has_permission = False
+    if current_user.is_super_admin_role():
+        has_permission = True
+    elif media.user_id == current_user.id:
+        has_permission = True
+    elif media.exhibition_id:
+        exhibition = db.session.get(Exhibition, media.exhibition_id)
+        if exhibition and current_user.can_manage_exhibition(exhibition):
+            has_permission = True
+    
+    if not has_permission:
         abort(403, "您沒有權限刪除此檔案")
     
     # 保存展覽（用於重定向，對外使用 public_id）

@@ -107,8 +107,8 @@ class User(UserMixin, db.Model):
         
         規則：
         - 超級管理員可以管理所有展覽
+        - 展覽創辦人可以管理自己創建的展覽（不論角色）
         - 一般管理員只能管理自己創建的展覽
-        - 一般使用者無法管理展覽
         """
         if not exhibition:
             return False
@@ -117,11 +117,15 @@ class User(UserMixin, db.Model):
         if self.is_super_admin_role():
             return True
         
-        # 一般管理員只能管理自己創建的展覽
-        if self.is_admin_role():
-            return exhibition.creator_id == self.id
+        # 展覽創辦人可以管理自己創建的展覽（不論角色）
+        if exhibition.creator_id == self.id:
+            return True
         
-        # 一般使用者無法管理展覽
+        # 一般管理員只能管理自己創建的展覽（已在上面處理，此處保留以備未來擴展）
+        if self.is_admin_role():
+            return False
+        
+        # 其他情況無法管理
         return False
     
     def can_set_user_role(self):
