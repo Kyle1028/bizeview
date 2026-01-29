@@ -4,12 +4,23 @@
 """
 
 from datetime import datetime, date
+import json
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
 from pathlib import Path
 from werkzeug.utils import secure_filename
 
-from core.models import db, User, Exhibition, ExhibitionPhoto, Media, _public_id_exhibition
+from core.models import (
+    db,
+    User,
+    Exhibition,
+    ExhibitionPhoto,
+    Media,
+    ExhibitionFloor,
+    ExhibitionCell,
+    _public_id_exhibition,
+    media_cells,
+)
 from core.decorators import admin_required, super_admin_required, can_manage_exhibition
 
 # 建立管理員藍圖，所有管理員相關的路由都以 /admin 開頭
@@ -28,6 +39,137 @@ def init_admin(app):
     在 Flask 應用程式啟動時呼叫此函式
     """
     app.register_blueprint(admin_bp)
+
+
+def _generate_cells_for_floor(floor: ExhibitionFloor) -> None:
+    """
+    根據樓層的實際尺寸與 grid_size 為該樓層產生 ExhibitionCell。
+    每層的 cell_code 從 C000001 重新編號，依「上到下、左到右」順序。
+    """
+    if not floor.width_meters or not floor.height_meters or not floor.grid_size:
+        return
+
+    cols = int(floor.width_meters / floor.grid_size)
+    rows = int(floor.height_meters / floor.grid_size)
+
+    # 獲取該樓層的所有現有 cells
+    existing_cells = ExhibitionCell.query.filter_by(floor_id=floor.id).all()
+    
+    if existing_cells:
+        # 先刪除 media_cells 關聯表中的記錄（避免外鍵約束錯誤）
+        cell_ids = [cell.id for cell in existing_cells]
+        # 使用 SQLAlchemy 刪除關聯記錄
+        if cell_ids:
+            db.session.execute(
+                media_cells.delete().where(media_cells.c.cell_id.in_(cell_ids))
+            )
+        
+        # 然後刪除 cells
+        for cell in existing_cells:
+            db.session.delete(cell)
+        db.session.flush()  # 確保刪除操作已執行
+
+    cells = []
+    idx = 1
+    for row in range(rows):
+        for col in range(cols):
+            code = f"C{idx:06d}"
+            cells.append(
+                ExhibitionCell(
+                    floor_id=floor.id,
+                    cell_code=code,
+                    row=row,
+                    col=col,
+                    name=f"區域 {code}",
+                    is_active=True,
+                )
+            )
+            idx += 1
+
+    if cells:
+        db.session.add_all(cells)
+
+
+def _apply_selection_polygon(floor: ExhibitionFloor, polygon_data) -> None:
+    """
+    根據圈選的多邊形區域，更新網格的 is_active 狀態。
+    支持單個多邊形或多個區域的列表。
+    
+    Args:
+        floor: ExhibitionFloor 物件
+        polygon_data: 可以是：
+            - 多邊形頂點列表，每個頂點為 {x: 0.0-1.0, y: 0.0-1.0}（相對於圖片尺寸的比例）
+            - 區域列表，每個區域為 {type: 'rect'|'polygon', points: [...]}
+    """
+    if not polygon_data:
+        return
+    
+    # 獲取該樓層的所有網格
+    cells = ExhibitionCell.query.filter_by(floor_id=floor.id).all()
+    if not cells:
+        return
+    
+    # 計算網格數量
+    cols = int(floor.width_meters / floor.grid_size)
+    rows = int(floor.height_meters / floor.grid_size)
+    
+    # 判斷點是否在多邊形內（射線法）
+    def point_in_polygon(point, polygon):
+        inside = False
+        for i in range(len(polygon)):
+            j = (i + 1) % len(polygon)
+            xi, yi = polygon[i]["x"], polygon[i]["y"]
+            xj, yj = polygon[j]["x"], polygon[j]["y"]
+            intersect = ((yi > point["y"]) != (yj > point["y"])) and \
+                       (point["x"] < (xj - xi) * (point["y"] - yi) / (yj - yi) + xi)
+            if intersect:
+                inside = not inside
+        return inside
+    
+    # 處理多個區域的情況
+    areas = []
+    if isinstance(polygon_data, list) and len(polygon_data) > 0:
+        # 檢查第一個元素是否有 'type' 和 'points' 鍵（多個區域）
+        if isinstance(polygon_data[0], dict) and 'type' in polygon_data[0] and 'points' in polygon_data[0]:
+            # 多個區域的情況
+            areas = polygon_data
+        else:
+            # 單個多邊形的情況（向後兼容）
+            areas = [{"type": "polygon", "points": polygon_data}]
+    
+    if not areas:
+        return
+    
+    # 將所有區域轉換為實際座標
+    actual_polygons = []
+    for area in areas:
+        points = area.get("points", [])
+        if len(points) < 3:
+            continue
+        actual_polygon = [
+            {"x": p["x"] * floor.width_meters, "y": p["y"] * floor.height_meters}
+            for p in points
+        ]
+        actual_polygons.append(actual_polygon)
+    
+    if not actual_polygons:
+        return
+    
+    # 更新每個網格的 is_active 狀態
+    # 只要網格中心點在任何一個區域內，就標記為有效
+    for cell in cells:
+        # 計算網格中心點的實際座標（公尺）
+        center_x = (cell.col + 0.5) * floor.grid_size
+        center_y = (cell.row + 0.5) * floor.grid_size
+        
+        # 檢查中心點是否在任何一個區域內
+        is_inside = False
+        for actual_polygon in actual_polygons:
+            if point_in_polygon({"x": center_x, "y": center_y}, actual_polygon):
+                is_inside = True
+                break
+        
+        cell.is_active = is_inside
 
 
 # ==================== 展覽管理 ====================
@@ -87,9 +229,13 @@ def create_exhibition():
                 flash("結束日期格式不正確", "error")
                 return render_template("admin/exhibition_form.html", mode="create")
         
-        # 處理封面圖片上傳
+        # 處理封面圖片與樓層目錄
         cover_image_path = None
         cover_file = request.files.get("cover_image")
+        # 先計算安全的展覽目錄名稱，供封面與樓層共用
+        safe_title = "".join(c for c in title if c.isalnum() or c in (" ", "-", "_")).strip()
+        safe_title = safe_title.replace(" ", "_")[:50]  # 限制長度
+        exhibition_dir = EXHIBITION_DIR / safe_title
         if cover_file and cover_file.filename:
             # 生成安全的檔案名稱
             filename = secure_filename(cover_file.filename)
@@ -101,9 +247,6 @@ def create_exhibition():
                 return render_template("admin/exhibition_form.html", mode="create")
             
             # 創建展覽專用目錄（使用標題的簡化版本）
-            safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
-            safe_title = safe_title.replace(' ', '_')[:50]  # 限制長度
-            exhibition_dir = EXHIBITION_DIR / safe_title
             exhibition_dir.mkdir(parents=True, exist_ok=True)
             
             # 儲存封面圖片
@@ -129,7 +272,60 @@ def create_exhibition():
             db.session.commit()
             exhibition.public_id = _public_id_exhibition(exhibition.id)  # 7+9位序號+6碼隨機
             db.session.commit()
-            
+
+            # 若有提供第一層樓層平面圖與尺寸，建立 F001 與區域
+            floor_file = request.files.get("floor_image_f001")
+            width_str = request.form.get("floor_width_f001", "").strip()
+            height_str = request.form.get("floor_height_f001", "").strip()
+            grid_str = request.form.get("floor_grid_f001", "").strip()
+            if floor_file and floor_file.filename and width_str and height_str:
+                try:
+                    width_m = float(width_str)
+                    height_m = float(height_str)
+                    grid_size = float(grid_str) if grid_str else 1.0
+                except ValueError:
+                    width_m = height_m = 0
+                    grid_size = 1.0
+
+                if width_m > 0 and height_m > 0:
+                    filename = secure_filename(floor_file.filename)
+                    ext = Path(filename).suffix.lower()
+                    if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+                        flash("樓層平面圖格式不支援，請使用 JPG、PNG 或 WEBP", "error")
+                        return render_template("admin/exhibition_form.html", mode="create")
+
+                    exhibition_dir.mkdir(parents=True, exist_ok=True)
+                    floor_filename = f"F001_floor{ext}"
+                    floor_path = exhibition_dir / floor_filename
+                    floor_file.save(floor_path)
+                    floor_rel = str(floor_path.relative_to(BASE_DIR))
+
+                    floor = ExhibitionFloor(
+                        exhibition_id=exhibition.id,
+                        floor_code="F001",
+                        image_path=floor_rel,
+                        width_meters=width_m,
+                        height_meters=height_m,
+                        grid_size=grid_size if grid_size > 0 else 1.0,
+                        created_at=datetime.now(),
+                    )
+                    db.session.add(floor)
+                    db.session.flush()  # 取得 floor.id 以產生 cells
+                    _generate_cells_for_floor(floor)
+                    
+                    # 處理圈選區域（如果有）
+                    selection_polygon_str = request.form.get("selection_polygon", "").strip()
+                    if selection_polygon_str:
+                        try:
+                            polygon_data = json.loads(selection_polygon_str)
+                            if polygon_data and len(polygon_data) >= 3:
+                                _apply_selection_polygon(floor, polygon_data)
+                        except (json.JSONDecodeError, ValueError) as e:
+                            # 如果解析失敗，忽略錯誤，不影響展覽創建
+                            pass
+                    
+                    db.session.commit()
+
             flash("展覽創建成功！", "success")
             return redirect(url_for("admin.exhibitions_list"))
         
@@ -186,7 +382,7 @@ def edit_exhibition(exhibition_public_id):
                 flash("結束日期格式不正確", "error")
                 return render_template("admin/exhibition_form.html", mode="edit", exhibition=exhibition)
         
-        # 處理封面圖片上傳（可選）
+        # 處理封面圖片與樓層目錄（可選）
         cover_file = request.files.get("cover_image")
         if cover_file and cover_file.filename:
             filename = secure_filename(cover_file.filename)
@@ -223,6 +419,110 @@ def edit_exhibition(exhibition_public_id):
             exhibition.updated_at = datetime.now()
             
             db.session.commit()
+
+            # 更新 / 新增第一層樓層 F001（若有提供樓層資訊）
+            floor_file = request.files.get("floor_image_f001")
+            width_str = request.form.get("floor_width_f001", "").strip()
+            height_str = request.form.get("floor_height_f001", "").strip()
+            grid_str = request.form.get("floor_grid_f001", "").strip()
+
+            # 只改 grid_size 也應該要能更新（不一定會重填寬高或重傳平面圖）
+            has_floor_input = (floor_file and floor_file.filename) or (width_str and height_str) or bool(grid_str)
+            if has_floor_input:
+                try:
+                    width_m = float(width_str) if width_str else None
+                    height_m = float(height_str) if height_str else None
+                    grid_size = float(grid_str) if grid_str else None
+                except ValueError:
+                    width_m = height_m = None
+                    grid_size = None
+
+                # 找出或建立 F001
+                floor = next((f for f in exhibition.floors if f.floor_code == "F001"), None)
+
+                safe_title = "".join(c for c in exhibition.title if c.isalnum() or c in (' ', '-', '_')).strip()
+                safe_title = safe_title.replace(' ', '_')[:50]
+                floor_dir = EXHIBITION_DIR / safe_title
+                floor_dir.mkdir(parents=True, exist_ok=True)
+
+                def _save_floor_image(target_floor):
+                    nonlocal floor_file
+                    if floor_file and floor_file.filename:
+                        _filename = secure_filename(floor_file.filename)
+                        _ext = Path(_filename).suffix.lower()
+                        if _ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+                            raise ValueError("樓層平面圖格式不支援，請使用 JPG、PNG 或 WEBP")
+                        floor_filename = f"F001_floor{_ext}"
+                        floor_path = floor_dir / floor_filename
+                        floor_file.save(floor_path)
+                        target_floor.image_path = str(floor_path.relative_to(BASE_DIR))
+
+                try:
+                    if not floor and width_m and height_m:
+                        # 建立新樓層
+                        floor = ExhibitionFloor(
+                            exhibition_id=exhibition.id,
+                            floor_code="F001",
+                            image_path="",
+                            width_meters=width_m,
+                            height_meters=height_m,
+                            grid_size=grid_size if grid_size and grid_size > 0 else 1.0,
+                            created_at=datetime.now(),
+                        )
+                        db.session.add(floor)
+                        db.session.flush()
+                        _save_floor_image(floor)
+                        _generate_cells_for_floor(floor)
+                        
+                        # 處理圈選區域（如果有）
+                        selection_polygon_str = request.form.get("selection_polygon", "").strip()
+                        if selection_polygon_str:
+                            try:
+                                polygon_data = json.loads(selection_polygon_str)
+                                if polygon_data and len(polygon_data) >= 3:
+                                    _apply_selection_polygon(floor, polygon_data)
+                            except (json.JSONDecodeError, ValueError) as e:
+                                # 如果解析失敗，忽略錯誤，不影響展覽更新
+                                pass
+                        
+                        db.session.commit()
+                    elif not floor and (grid_size and grid_size > 0) and not (width_m and height_m):
+                        # 只有 grid_size 但沒有既有樓層也沒有寬高，無法建立/更新
+                        flash("只修改網格大小前，請先填寫樓層的寬度與高度（或先建立 F001 樓層）", "error")
+                        return render_template("admin/exhibition_form.html", mode="edit", exhibition=exhibition)
+                    elif floor:
+                        updated = False
+                        if width_m and height_m:
+                            floor.width_meters = width_m
+                            floor.height_meters = height_m
+                            updated = True
+                        if grid_size and grid_size > 0:
+                            floor.grid_size = grid_size
+                            updated = True
+                        if floor_file and floor_file.filename:
+                            _save_floor_image(floor)
+                            updated = True
+
+                        if updated:
+                            db.session.flush()
+                            _generate_cells_for_floor(floor)
+                            
+                            # 處理圈選區域（如果有）
+                            selection_polygon_str = request.form.get("selection_polygon", "").strip()
+                            if selection_polygon_str:
+                                try:
+                                    polygon_data = json.loads(selection_polygon_str)
+                                    if polygon_data and len(polygon_data) >= 3:
+                                        _apply_selection_polygon(floor, polygon_data)
+                                except (json.JSONDecodeError, ValueError) as e:
+                                    # 如果解析失敗，忽略錯誤，不影響展覽更新
+                                    pass
+                            
+                            db.session.commit()
+                except ValueError as ve:
+                    db.session.rollback()
+                    flash(str(ve), "error")
+                    return render_template("admin/exhibition_form.html", mode="edit", exhibition=exhibition)
             
             flash("展覽更新成功！", "success")
             return redirect(url_for("admin.exhibitions_list"))
@@ -333,6 +633,98 @@ def delete_exhibition(exhibition_public_id):
         flash(f"刪除展覽失敗：{str(e)}", "error")
     
     return redirect(url_for("admin.exhibitions_list"))
+
+
+# ==================== 樓層與區域管理 ====================
+
+@admin_bp.route("/exhibitions/<exhibition_public_id>/floors")
+@can_manage_exhibition('exhibition_public_id')
+def floors_management(exhibition_public_id):
+    """
+    樓層管理頁面（對外使用 public_id）
+    顯示展覽的所有樓層列表
+    """
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
+    
+    # 再次確認權限
+    if not current_user.can_manage_exhibition(exhibition):
+        abort(403, "您沒有權限管理此展覽")
+    
+    floors = list(exhibition.floors)
+    floors.sort(key=lambda f: f.floor_code)  # 依 F001, F002... 排序
+    
+    return render_template("admin/floors_management.html", exhibition=exhibition, floors=floors)
+
+
+@admin_bp.route("/exhibitions/<exhibition_public_id>/floors/<floor_code>/cells", methods=["GET", "POST"])
+@can_manage_exhibition('exhibition_public_id')
+def cells_management(exhibition_public_id, floor_code):
+    """
+    區域管理頁面（對外使用 public_id）
+    GET：顯示該樓層的所有區域列表
+    POST：批量更新區域名稱與啟用狀態
+    """
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
+    
+    # 再次確認權限
+    if not current_user.can_manage_exhibition(exhibition):
+        abort(403, "您沒有權限管理此展覽")
+    
+    floor = next((f for f in exhibition.floors if f.floor_code == floor_code), None)
+    if not floor:
+        abort(404, "找不到該樓層")
+    
+    if request.method == "POST":
+        # 批量更新區域名稱與啟用狀態
+        cell_updates = {}
+        # 先收集所有 cell_id
+        all_cell_ids = set()
+        for key in request.form.keys():
+            if key.startswith("cell_name_"):
+                all_cell_ids.add(int(key.replace("cell_name_", "")))
+        
+        # 處理名稱更新
+        for cell_id in all_cell_ids:
+            name_key = f"cell_name_{cell_id}"
+            if name_key in request.form:
+                cell_updates.setdefault(cell_id, {})["name"] = request.form[name_key].strip()
+        
+        # 處理啟用狀態：如果 checkbox 有勾選（存在於 form），is_active=True；否則 False
+        for cell_id in all_cell_ids:
+            active_key = f"cell_active_{cell_id}"
+            if active_key in request.form:
+                cell_updates.setdefault(cell_id, {})["is_active"] = True
+            else:
+                # checkbox 未勾選時不會出現在 form 中，所以需要明確設為 False
+                cell_updates.setdefault(cell_id, {})["is_active"] = False
+        
+        try:
+            for cell_id, updates in cell_updates.items():
+                cell = ExhibitionCell.query.get(cell_id)
+                if cell and cell.floor_id == floor.id:
+                    if "name" in updates:
+                        cell.name = updates["name"]
+                    if "is_active" in updates:
+                        cell.is_active = updates["is_active"]
+            
+            db.session.commit()
+            flash("區域更新成功", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"更新失敗：{str(e)}", "error")
+        
+        return redirect(url_for("admin.cells_management", exhibition_public_id=exhibition.public_id, floor_code=floor_code))
+    
+    # GET：顯示區域列表
+    cells = list(floor.cells)
+    # 依 row, col 排序（上到下、左到右）
+    cells.sort(key=lambda c: (c.row, c.col))
+    
+    # 統計每個區域的媒體數量
+    for cell in cells:
+        cell.media_count = len(cell.media_files) if hasattr(cell, 'media_files') else 0
+    
+    return render_template("admin/cells_management.html", exhibition=exhibition, floor=floor, cells=cells)
 
 
 # ==================== 用戶角色管理（僅超級管理員） ====================

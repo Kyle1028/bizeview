@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/static/logo-icon.png" />
+    <title>{{ _('區域管理') }} - {{ floor.floor_code }} - {{ exhibition.title }} - 商景 Bizeview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            /* 全站預設禁止一般文字反白選取（表單元素除外） */
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
+        /* 表單元素仍允許選取文字，方便輸入編輯 */
+        input, textarea, select {
+            -webkit-user-select: text;
+            -ms-user-select: text;
+            user-select: text;
+        }
+        
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .navbar-brand {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .navbar-brand a {
+            text-decoration: none;
+            color: inherit;
+        }
+        
+        .navbar-brand img {
+            height: 40px;
+            vertical-align: middle;
+        }
+        
+        .navbar-user {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .user-email {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .nav-link {
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 10px 20px;
+            border-radius: 6px;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
+        }
+        
+        .nav-link:hover {
+            background: #5568d3;
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 100px 20px 40px 20px;
+        }
+        
+        .page-header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            margin-bottom: 30px;
+        }
+        
+        .page-header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .page-header .breadcrumb {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .page-header .breadcrumb a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .page-header .floor-info {
+            margin-top: 15px;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .cells-table-container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            overflow-x: auto;
+        }
+        
+        .cells-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .cells-table th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .cells-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .cells-table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .cell-code {
+            font-weight: 600;
+            color: #667eea;
+            font-family: monospace;
+        }
+        
+        .cell-name-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .cell-name-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .cell-active-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .cell-inactive {
+            opacity: 0.5;
+            background: #f0f0f0;
+        }
+        
+        .form-actions {
+            margin-top: 30px;
+            display: flex;
+            gap: 15px;
+            padding-top: 30px;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+            display: inline-block;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+        
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+        
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+        
+        .flash-message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .flash-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .flash-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .media-count {
+            color: #667eea;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <a href="{{ url_for('index') }}">
+                <img src="/static/logo.png" alt="商景 Bizeview" style="height: 40px; vertical-align: middle;">
+            </a>
+        </div>
+        <div class="navbar-user">
+            {% if current_user.is_authenticated %}
+                {% include '_language_switcher.html' %}
+                <span class="user-email">👤 {{ current_user.username or current_user.email }}</span>
+                {% include '_settings_dropdown.html' %}
+            {% else %}
+                {% include '_language_switcher.html' %}
+                <a href="{{ url_for('auth.login') }}" class="nav-link">{{ _('登入') }}</a>
+                <a href="{{ url_for('auth.register') }}" class="nav-link">{{ _('註冊') }}</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>{{ _('區域管理') }} - {{ floor.floor_code }}</h1>
+            <div class="breadcrumb">
+                <a href="{{ url_for('admin.exhibitions_list') }}">{{ _('展覽列表') }}</a> > 
+                <a href="{{ url_for('admin.edit_exhibition', exhibition_public_id=exhibition.public_id) }}">{{ exhibition.title }}</a> > 
+                <a href="{{ url_for('admin.floors_management', exhibition_public_id=exhibition.public_id) }}">{{ _('樓層管理') }}</a> > 
+                {{ floor.floor_code }}
+            </div>
+            <div class="floor-info">
+                <strong>{{ _('平面圖尺寸') }}：</strong>{{ floor.width_meters }}m × {{ floor.height_meters }}m | 
+                <strong>{{ _('網格大小') }}：</strong>{{ floor.grid_size }}m × {{ floor.grid_size }}m | 
+                <strong>{{ _('區域總數') }}：</strong>{{ cells|length }} {{ _('個') }}
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('admin.cells_management', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}">
+            <div class="cells-table-container">
+                <table class="cells-table">
+                    <thead>
+                        <tr>
+                            <th>{{ _('區域代碼') }}</th>
+                            <th>{{ _('位置') }}</th>
+                            <th>{{ _('名稱') }}</th>
+                            <th>{{ _('啟用狀態') }}</th>
+                            <th>{{ _('媒體數量') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cell in cells %}
+                            <tr {% if not cell.is_active %}class="cell-inactive"{% endif %}>
+                                <td class="cell-code">{{ cell.cell_code }}</td>
+                                <td>({{ cell.row }}, {{ cell.col }})</td>
+                                <td>
+                                    <input type="text" 
+                                           name="cell_name_{{ cell.id }}" 
+                                           value="{{ cell.name or '' }}" 
+                                           class="cell-name-input"
+                                           placeholder="{{ _('區域名稱（可選）') }}">
+                                </td>
+                                <td>
+                                    <input type="checkbox" 
+                                           name="cell_active_{{ cell.id }}" 
+                                           {% if cell.is_active %}checked{% endif %}
+                                           class="cell-active-checkbox">
+                                </td>
+                                <td>
+                                    <span class="media-count">{{ cell.media_count or 0 }}</span>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    {{ _('儲存變更') }}
+                </button>
+                <a href="{{ url_for('admin.floors_management', exhibition_public_id=exhibition.public_id) }}" class="btn btn-secondary">
+                    {{ _('返回樓層列表') }}
+                </a>
+            </div>
+        </form>
+    </div>
+</body>
+</html>

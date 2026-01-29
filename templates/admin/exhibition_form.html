@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/png" href="/static/logo-icon.png" />
-    <title>{% if mode == 'create' %}{{ _('創建展覽') }}{% else %}{{ _('編輯展覽') }}{% endif %} - 商景 Bizeview</title>
+    <title>{% if mode == 'create' %}{{ _('建立展覽') }}{% else %}{{ _('編輯展覽') }}{% endif %} - 商景 Bizeview</title>
     <style>
         * {
             margin: 0;
@@ -336,7 +336,7 @@
     <div class="container">
         <div class="form-card">
             <div class="form-header">
-                <h1>{% if mode == 'create' %}{{ _('創建新展覽') }}{% else %}{{ _('編輯展覽') }}{% endif %}</h1>
+                <h1>{% if mode == 'create' %}{{ _('建立新展覽') }}{% else %}{{ _('編輯展覽') }}{% endif %}</h1>
             </div>
 
             <!-- Flash 訊息 -->
@@ -389,6 +389,79 @@
                     {% endif %}
                 </div>
 
+                <!-- 樓層平面圖設定（目前先支援 F001，一個展覽可之後再透過管理頁新增更多樓層） -->
+                <div class="form-group">
+                    <label>{{ _('樓層平面圖（F001）') }}</label>
+                    <input type="file" id="floor_image_f001" name="floor_image_f001" accept="image/*">
+                    <div class="help-text">
+                        {{ _('選擇此展覽第一層的平面圖（可選），系統會依實際尺寸與網格大小切成區域 C000001...') }}
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px;">
+                        <div>
+                            <label for="floor_width_f001">{{ _('實際寬度（公尺）') }}</label>
+                            <input type="number" id="floor_width_f001" name="floor_width_f001" min="0" step="0.01"
+                                   value="">
+                        </div>
+                        <div>
+                            <label for="floor_height_f001">{{ _('實際高度（公尺）') }}</label>
+                            <input type="number" id="floor_height_f001" name="floor_height_f001" min="0" step="0.01"
+                                   value="">
+                        </div>
+                        <div>
+                            <label for="floor_grid_f001">{{ _('網格大小（公尺，預設 1）') }}</label>
+                            <input type="number" id="floor_grid_f001" name="floor_grid_f001" min="0.1" step="0.1"
+                                   value="">
+                        </div>
+                    </div>
+                    {% if exhibition and exhibition.floors %}
+                        <div class="help-text" style="margin-top: 10px;">
+                            {{ _('此展覽目前已有下列樓層：') }}
+                            {% for floor in exhibition.floors %}
+                                <span style="margin-right: 8px;">{{ floor.floor_code }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    
+                    <!-- 圈選展覽範圍工具 -->
+                    <div id="areaSelectionSection" style="margin-top: 20px; display: none;">
+                        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap;">
+                            <div style="display: flex; gap: 5px;">
+                                <button type="button" id="rectToolBtn" class="btn btn-primary" style="padding: 8px 16px;">
+                                    {{ _('矩形選擇') }}
+                                </button>
+                                <button type="button" id="polygonToolBtn" class="btn btn-secondary" style="padding: 8px 16px;">
+                                    {{ _('多邊形選擇') }}
+                                </button>
+                            </div>
+                            <button type="button" id="undoLastPointBtn" class="btn btn-secondary" style="padding: 8px 16px; display: none;">
+                                {{ _('撤銷最後一點') }}
+                            </button>
+                            <button type="button" id="clearSelectionBtn" class="btn btn-secondary" style="padding: 8px 16px; display: none;">
+                                {{ _('清除圈選') }}
+                            </button>
+                            <button type="button" id="finishSelectionBtn" class="btn btn-primary" style="padding: 8px 16px; display: none;">
+                                {{ _('完成當前區域') }}
+                            </button>
+                            <button type="button" id="finishAllBtn" class="btn btn-primary" style="padding: 8px 16px; display: none;">
+                                {{ _('完成所有圈選') }}
+                            </button>
+                            <span id="selectionStatus" style="color: #666; font-size: 14px;"></span>
+                        </div>
+                        <div id="selectedAreasList" style="margin-top: 10px; display: none;">
+                            <div style="font-weight: 600; margin-bottom: 5px;">{{ _('已選擇的區域') }}：</div>
+                            <div id="selectedAreasTags" style="display: flex; flex-wrap: wrap; gap: 5px;"></div>
+                        </div>
+                        <div style="position: relative; border: 2px solid #ddd; border-radius: 8px; background: #f8f9fa; overflow: auto; max-height: 80vh;">
+                            <canvas id="floorplanCanvas" style="display: block; cursor: crosshair;"></canvas>
+                            <div id="canvasOverlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></div>
+                        </div>
+                        <div class="help-text" style="margin-top: 10px;">
+                            <span id="helpText">{{ _('選擇工具：矩形選擇（拖拽繪製矩形）或多邊形選擇（點擊多個點）。圈選區域外的網格將被標記為無效。') }}</span>
+                        </div>
+                        <input type="hidden" id="selectionPolygon" name="selection_polygon" value="">
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <div class="checkbox-group">
                         <input type="checkbox" id="is_published" name="is_published" 
@@ -401,12 +474,724 @@
 
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">
-                        {% if mode == 'create' %}{{ _('創建展覽') }}{% else %}{{ _('更新展覽') }}{% endif %}
+                        {% if mode == 'create' %}{{ _('建立展覽') }}{% else %}{{ _('更新展覽') }}{% endif %}
                     </button>
                     <a href="{{ url_for('admin.exhibitions_list') }}" class="btn btn-secondary">{{ _('取消') }}</a>
                 </div>
             </form>
         </div>
     </div>
+
+    <script>
+        // 圈選展覽範圍功能
+        (function() {
+            const floorImageInput = document.getElementById('floor_image_f001');
+            const floorWidthInput = document.getElementById('floor_width_f001');
+            const floorHeightInput = document.getElementById('floor_height_f001');
+            const floorGridInput = document.getElementById('floor_grid_f001');
+            const areaSelectionSection = document.getElementById('areaSelectionSection');
+            const rectToolBtn = document.getElementById('rectToolBtn');
+            const polygonToolBtn = document.getElementById('polygonToolBtn');
+            const undoLastPointBtn = document.getElementById('undoLastPointBtn');
+            const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+            const finishSelectionBtn = document.getElementById('finishSelectionBtn');
+            const selectionStatus = document.getElementById('selectionStatus');
+            const helpText = document.getElementById('helpText');
+            const canvas = document.getElementById('floorplanCanvas');
+            const selectionPolygonInput = document.getElementById('selectionPolygon');
+            
+            const finishAllBtn = document.getElementById('finishAllBtn');
+            const selectedAreasList = document.getElementById('selectedAreasList');
+            const selectedAreasTags = document.getElementById('selectedAreasTags');
+            
+            let ctx = null;
+            let floorplanImage = null;
+            let selectionMode = null; // 'rect' 或 'polygon'
+            let isSelecting = false;
+            let polygonPoints = [];
+            let rectStartPoint = null; // 矩形起始點
+            let rectEndPoint = null; // 矩形結束點
+            let isDrawingRect = false; // 是否正在繪製矩形
+            let selectedAreas = []; // 已完成的選擇區域列表 [{type: 'rect'|'polygon', points: [...]}, ...]
+            let gridData = null; // { cols, rows, cellWidth, cellHeight }
+            
+            // 如果是編輯模式且有現有的樓層數據，加載平面圖
+            {% if exhibition and exhibition.floors %}
+                {% for floor in exhibition.floors %}
+                    {% if floor.floor_code == 'F001' %}
+                        (function() {
+                            const img = new Image();
+                            img.onload = function() {
+                                floorplanImage = img;
+                                
+                                // 等待下一帧，確保容器尺寸已計算
+                                requestAnimationFrame(function() {
+                                    // 獲取容器尺寸
+                                    const container = canvas.parentElement;
+                                    const containerRect = container.getBoundingClientRect();
+                                    const containerWidth = Math.max(containerRect.width - 20, 800); // 最小寬度 800px
+                                    const containerHeight = Math.max(window.innerHeight * 0.6, 600); // 最小高度 600px
+                                    
+                                    // 計算適合的顯示尺寸，確保圖片完整顯示且不被裁剪
+                                    const scaleX = containerWidth / img.width;
+                                    const scaleY = containerHeight / img.height;
+                                    const scale = Math.min(scaleX, scaleY); // 選擇較小的縮放比例，確保完整顯示
+                                    
+                                    // Canvas 內部尺寸 = 顯示尺寸（這樣座標轉換就簡單了）
+                                    const displayWidth = Math.round(img.width * scale);
+                                    const displayHeight = Math.round(img.height * scale);
+                                    
+                                    canvas.width = displayWidth;
+                                    canvas.height = displayHeight;
+                                    canvas.style.width = displayWidth + 'px';
+                                    canvas.style.height = displayHeight + 'px';
+                                    
+                                    // 保存縮放比例，用於後續計算
+                                    canvas.dataset.scale = scale;
+                                    canvas.dataset.originalWidth = img.width;
+                                    canvas.dataset.originalHeight = img.height;
+                                    
+                                    ctx = canvas.getContext('2d');
+                                    
+                                    // 繪製圖片（縮放到顯示尺寸）
+                                    ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
+                                    
+                                    // 設置現有的寬高和網格大小
+                                    {% if floor.width_meters %}
+                                        floorWidthInput.value = {{ floor.width_meters }};
+                                    {% endif %}
+                                    {% if floor.height_meters %}
+                                        floorHeightInput.value = {{ floor.height_meters }};
+                                    {% endif %}
+                                    {% if floor.grid_size %}
+                                        floorGridInput.value = {{ floor.grid_size }};
+                                    {% endif %}
+                                    
+                                    // 顯示圈選區域並更新網格
+                                    areaSelectionSection.style.display = 'block';
+                                    updateGrid();
+                                });
+                            };
+                            img.src = "{{ url_for('exhibition_floor_image', exhibition_public_id=exhibition.public_id, floor_code='F001') }}";
+                        })();
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+            
+            // 當平面圖上傳時，顯示預覽和圈選工具
+            floorImageInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file && file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        const img = new Image();
+                        img.onload = function() {
+                            floorplanImage = img;
+                            
+                            // 等待下一帧，確保容器尺寸已計算
+                            requestAnimationFrame(function() {
+                                // 獲取容器尺寸
+                                const container = canvas.parentElement;
+                                const containerRect = container.getBoundingClientRect();
+                                const containerWidth = Math.max(containerRect.width - 20, 800); // 最小寬度 800px
+                                const containerHeight = Math.max(window.innerHeight * 0.6, 600); // 最小高度 600px
+                                
+                                // 計算適合的顯示尺寸，確保圖片完整顯示且不被裁剪
+                                const scaleX = containerWidth / img.width;
+                                const scaleY = containerHeight / img.height;
+                                const scale = Math.min(scaleX, scaleY); // 選擇較小的縮放比例，確保完整顯示
+                                
+                                // Canvas 內部尺寸 = 顯示尺寸（這樣座標轉換就簡單了）
+                                const displayWidth = Math.round(img.width * scale);
+                                const displayHeight = Math.round(img.height * scale);
+                                
+                                canvas.width = displayWidth;
+                                canvas.height = displayHeight;
+                                canvas.style.width = displayWidth + 'px';
+                                canvas.style.height = displayHeight + 'px';
+                                
+                                // 保存縮放比例，用於後續計算
+                                canvas.dataset.scale = scale;
+                                canvas.dataset.originalWidth = img.width;
+                                canvas.dataset.originalHeight = img.height;
+                                
+                                ctx = canvas.getContext('2d');
+                                
+                                // 繪製圖片（縮放到顯示尺寸）
+                                ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
+                                
+                                // 顯示圈選區域
+                                areaSelectionSection.style.display = 'block';
+                                
+                                // 如果有寬高和網格大小，繪製網格
+                                updateGrid();
+                            });
+                        };
+                        img.src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            
+            // 當寬高或網格大小改變時，更新網格
+            [floorWidthInput, floorHeightInput, floorGridInput].forEach(input => {
+                input.addEventListener('input', updateGrid);
+            });
+            
+            function updateGrid() {
+                if (!ctx || !floorplanImage) return;
+                
+                const width = parseFloat(floorWidthInput.value) || 0;
+                const height = parseFloat(floorHeightInput.value) || 0;
+                const gridSize = parseFloat(floorGridInput.value) || 1;
+                
+                if (width > 0 && height > 0 && gridSize > 0) {
+                    // 計算網格數量
+                    const cols = Math.floor(width / gridSize);
+                    const rows = Math.floor(height / gridSize);
+                    
+                    // 計算每個格子在 canvas 上的尺寸
+                    const cellWidth = canvas.width / cols;
+                    const cellHeight = canvas.height / rows;
+                    
+                    gridData = { cols, rows, cellWidth, cellHeight };
+                    
+                    // 重新繪製圖片和網格
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(floorplanImage, 0, 0, canvas.width, canvas.height);
+                    
+                    // 繪製網格線
+                    ctx.strokeStyle = 'rgba(102, 126, 234, 0.3)';
+                    ctx.lineWidth = 1;
+                    
+                    for (let col = 0; col <= cols; col++) {
+                        const x = col * cellWidth;
+                        ctx.beginPath();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, canvas.height);
+                        ctx.stroke();
+                    }
+                    
+                    for (let row = 0; row <= rows; row++) {
+                        const y = row * cellHeight;
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(canvas.width, y);
+                        ctx.stroke();
+                    }
+                    
+                    // 繪製所有已選擇的區域
+                    drawAllAreas();
+                    
+                    // 如果有正在繪製的區域，也繪製
+                    if (selectionMode === 'rect' && rectStartPoint && rectEndPoint) {
+                        drawRect();
+                    } else if (selectionMode === 'polygon' && polygonPoints.length > 0) {
+                        drawPolygon();
+                    }
+                    
+                    // 高亮顯示網格
+                    highlightCells();
+                }
+            }
+            
+            // 重置選擇狀態
+            function resetSelection() {
+                isSelecting = false;
+                selectionMode = null;
+                polygonPoints = [];
+                rectStartPoint = null;
+                rectEndPoint = null;
+                isDrawingRect = false;
+                selectedAreas = [];
+                selectionPolygonInput.value = '';
+                rectToolBtn.style.display = 'inline-block';
+                polygonToolBtn.style.display = 'inline-block';
+                undoLastPointBtn.style.display = 'none';
+                clearSelectionBtn.style.display = 'none';
+                finishSelectionBtn.style.display = 'none';
+                finishAllBtn.style.display = 'none';
+                selectedAreasList.style.display = 'none';
+                selectedAreasTags.innerHTML = '';
+                selectionStatus.textContent = '';
+                helpText.textContent = '{{ _("選擇工具：矩形選擇（拖拽繪製矩形）或多邊形選擇（點擊多個點）。可以添加多個區域，圈選區域外的網格將被標記為無效。") }}';
+                canvas.style.cursor = 'default';
+                
+                if (ctx && floorplanImage) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(floorplanImage, 0, 0, canvas.width, canvas.height);
+                    updateGrid();
+                }
+            }
+            
+            // 矩形選擇工具
+            rectToolBtn.addEventListener('click', function() {
+                selectionMode = 'rect';
+                isSelecting = true;
+                polygonPoints = [];
+                rectStartPoint = null;
+                rectEndPoint = null;
+                rectToolBtn.style.display = 'none';
+                polygonToolBtn.style.display = 'none';
+                clearSelectionBtn.style.display = 'inline-block';
+                selectionStatus.textContent = '{{ _("按住滑鼠左鍵並拖拽來繪製矩形") }}';
+                helpText.textContent = '{{ _("按住滑鼠左鍵並拖拽來繪製矩形選擇區域") }}';
+                canvas.style.cursor = 'crosshair';
+            });
+            
+            // 多邊形選擇工具
+            polygonToolBtn.addEventListener('click', function() {
+                selectionMode = 'polygon';
+                isSelecting = true;
+                polygonPoints = [];
+                rectToolBtn.style.display = 'none';
+                polygonToolBtn.style.display = 'none';
+                undoLastPointBtn.style.display = 'inline-block';
+                clearSelectionBtn.style.display = 'inline-block';
+                finishSelectionBtn.style.display = 'inline-block';
+                selectionStatus.textContent = '{{ _("點擊平面圖上的點來繪製多邊形，點擊「完成圈選」完成（至少3個點）") }}';
+                helpText.textContent = '{{ _("點擊平面圖上的點來繪製多邊形，可以添加任意數量的點，至少需要3個點才能完成圈選") }}';
+                canvas.style.cursor = 'crosshair';
+            });
+            
+            // 撤銷最後一點
+            undoLastPointBtn.addEventListener('click', function() {
+                if (polygonPoints.length > 0) {
+                    polygonPoints.pop();
+                    if (ctx && floorplanImage) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(floorplanImage, 0, 0, canvas.width, canvas.height);
+                        updateGrid();
+                        drawPolygon();
+                    }
+                    selectionStatus.textContent = `{{ _("已添加") }} ${polygonPoints.length} {{ _("個點") }}`;
+                }
+            });
+            
+            // 完成圈選
+            finishSelectionBtn.addEventListener('click', function() {
+                if (polygonPoints.length < 3) {
+                    selectionStatus.textContent = '{{ _("至少需要3個點才能完成圈選") }}';
+                    return;
+                }
+                finishSelection();
+            });
+            
+            // 清除圈選
+            clearSelectionBtn.addEventListener('click', resetSelection);
+            
+            // 完成所有圈選
+            finishAllBtn.addEventListener('click', finishAllSelection);
+            
+            // 完成當前區域（添加到列表中，可以繼續添加更多區域）
+            function finishSelection() {
+                let polygonData = [];
+                let areaType = null;
+                
+                if (selectionMode === 'rect' && rectStartPoint && rectEndPoint) {
+                    // 將矩形轉換為多邊形（4個頂點）
+                    const x1 = Math.min(rectStartPoint.x, rectEndPoint.x);
+                    const y1 = Math.min(rectStartPoint.y, rectEndPoint.y);
+                    const x2 = Math.max(rectStartPoint.x, rectEndPoint.x);
+                    const y2 = Math.max(rectStartPoint.y, rectEndPoint.y);
+                    
+                    polygonData = [
+                        { x: x1 / canvas.width, y: y1 / canvas.height },
+                        { x: x2 / canvas.width, y: y1 / canvas.height },
+                        { x: x2 / canvas.width, y: y2 / canvas.height },
+                        { x: x1 / canvas.width, y: y2 / canvas.height }
+                    ];
+                    areaType = 'rect';
+                } else if (selectionMode === 'polygon' && polygonPoints.length >= 3) {
+                    // 多邊形座標（相對於圖片尺寸的比例）
+                    polygonData = polygonPoints.map(p => ({
+                        x: p.x / canvas.width,
+                        y: p.y / canvas.height
+                    }));
+                    areaType = 'polygon';
+                }
+                
+                if (polygonData.length >= 3) {
+                    // 添加到已選擇區域列表
+                    selectedAreas.push({
+                        type: areaType,
+                        points: polygonData,
+                        id: Date.now() // 用於識別和刪除
+                    });
+                    
+                    // 更新區域列表顯示
+                    updateSelectedAreasList();
+                    
+                    // 重置當前選擇狀態，允許繼續添加
+                    isSelecting = false;
+                    selectionMode = null;
+                    polygonPoints = [];
+                    rectStartPoint = null;
+                    rectEndPoint = null;
+                    isDrawingRect = false;
+                    
+                    // 重新繪製所有區域
+                    if (ctx && floorplanImage) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(floorplanImage, 0, 0, canvas.width, canvas.height);
+                        updateGrid();
+                        drawAllAreas();
+                        highlightCells();
+                    }
+                    
+                    // 顯示工具按鈕
+                    rectToolBtn.style.display = 'inline-block';
+                    polygonToolBtn.style.display = 'inline-block';
+                    undoLastPointBtn.style.display = 'none';
+                    finishSelectionBtn.style.display = 'none';
+                    finishAllBtn.style.display = 'inline-block';
+                    selectedAreasList.style.display = 'block';
+                    
+                    selectionStatus.textContent = `{{ _("已添加") }} ${selectedAreas.length} {{ _("個區域") }}，{{ _("可以繼續添加更多區域或點擊「完成所有圈選」") }}`;
+                    canvas.style.cursor = 'default';
+                }
+            }
+            
+            // 完成所有選擇（合併所有區域並保存）
+            function finishAllSelection() {
+                if (selectedAreas.length === 0) {
+                    selectionStatus.textContent = '{{ _("請至少添加一個區域") }}';
+                    return;
+                }
+                
+                // 合併所有區域的點（用於保存，後端會處理多個區域）
+                // 這裡我們保存所有區域的數據
+                const allAreasData = selectedAreas.map(area => ({
+                    type: area.type,
+                    points: area.points
+                }));
+                
+                selectionPolygonInput.value = JSON.stringify(allAreasData);
+                
+                // 最終高亮
+                highlightCells();
+                
+                selectionStatus.textContent = `{{ _("已完成") }} ${selectedAreas.length} {{ _("個區域的圈選") }}`;
+                finishAllBtn.style.display = 'none';
+            }
+            
+            // 更新已選擇區域列表顯示
+            function updateSelectedAreasList() {
+                selectedAreasTags.innerHTML = '';
+                selectedAreas.forEach((area, index) => {
+                    const tag = document.createElement('div');
+                    tag.style.cssText = 'display: inline-flex; align-items: center; gap: 5px; background: #667eea; color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px;';
+                    tag.innerHTML = `
+                        <span>${area.type === 'rect' ? '{{ _("矩形") }}' : '{{ _("多邊形") }}'} ${index + 1}</span>
+                        <button type="button" onclick="removeArea(${area.id})" style="background: rgba(255,255,255,0.3); border: none; color: white; cursor: pointer; padding: 2px 6px; border-radius: 3px;">×</button>
+                    `;
+                    selectedAreasTags.appendChild(tag);
+                });
+            }
+            
+            // 刪除區域
+            window.removeArea = function(areaId) {
+                selectedAreas = selectedAreas.filter(area => area.id !== areaId);
+                updateSelectedAreasList();
+                
+                if (selectedAreas.length === 0) {
+                    selectedAreasList.style.display = 'none';
+                    finishAllBtn.style.display = 'none';
+                    selectionPolygonInput.value = '';
+                }
+                
+                // 重新繪製
+                if (ctx && floorplanImage) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(floorplanImage, 0, 0, canvas.width, canvas.height);
+                    updateGrid();
+                    drawAllAreas();
+                    highlightCells();
+                }
+                
+                selectionStatus.textContent = `{{ _("已刪除，剩餘") }} ${selectedAreas.length} {{ _("個區域") }}`;
+            };
+            
+            // 繪製所有已選擇的區域
+            function drawAllAreas() {
+                selectedAreas.forEach(area => {
+                    if (area.type === 'rect') {
+                        // 矩形區域
+                        const points = area.points.map(p => ({
+                            x: p.x * canvas.width,
+                            y: p.y * canvas.height
+                        }));
+                        if (points.length === 4) {
+                            ctx.strokeStyle = '#667eea';
+                            ctx.fillStyle = 'rgba(102, 126, 234, 0.2)';
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.moveTo(points[0].x, points[0].y);
+                            for (let i = 1; i < points.length; i++) {
+                                ctx.lineTo(points[i].x, points[i].y);
+                            }
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.stroke();
+                        }
+                    } else if (area.type === 'polygon') {
+                        // 多邊形區域
+                        const points = area.points.map(p => ({
+                            x: p.x * canvas.width,
+                            y: p.y * canvas.height
+                        }));
+                        if (points.length >= 3) {
+                            ctx.strokeStyle = '#667eea';
+                            ctx.fillStyle = 'rgba(102, 126, 234, 0.2)';
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.moveTo(points[0].x, points[0].y);
+                            for (let i = 1; i < points.length; i++) {
+                                ctx.lineTo(points[i].x, points[i].y);
+                            }
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.stroke();
+                            
+                            // 繪製頂點
+                            ctx.fillStyle = '#667eea';
+                            points.forEach(p => {
+                                ctx.beginPath();
+                                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                                ctx.fill();
+                            });
+                        }
+                    }
+                });
+            }
+            
+            // Canvas 事件處理
+            // 矩形選擇：拖拽繪製
+            canvas.addEventListener('mousedown', function(e) {
+                if (!isSelecting || selectionMode !== 'rect') return;
+                
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                rectStartPoint = { x, y };
+                rectEndPoint = { x, y };
+                isDrawingRect = true;
+                canvas.style.cursor = 'crosshair';
+            });
+            
+            canvas.addEventListener('mousemove', function(e) {
+                if (!isDrawingRect || !rectStartPoint) return;
+                
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                rectEndPoint = { x, y };
+                
+                // 重新繪製（包含實時矩形預覽和已選擇的區域）
+                if (ctx && floorplanImage) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(floorplanImage, 0, 0, canvas.width, canvas.height);
+                    updateGrid();
+                    drawAllAreas();
+                    drawRect();
+                    highlightCells();
+                }
+            });
+            
+            canvas.addEventListener('mouseup', function(e) {
+                if (!isDrawingRect || !rectStartPoint) return;
+                
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                rectEndPoint = { x, y };
+                isDrawingRect = false;
+                
+                // 完成矩形選擇
+                finishSelection();
+            });
+            
+            // 多邊形選擇：點擊添加點
+            canvas.addEventListener('click', function(e) {
+                if (!isSelecting || selectionMode !== 'polygon') return;
+                
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // 確保座標在 Canvas 範圍內
+                const clampedX = Math.max(0, Math.min(x, canvas.width));
+                const clampedY = Math.max(0, Math.min(y, canvas.height));
+                
+                polygonPoints.push({ x: clampedX, y: clampedY });
+                
+                // 更新狀態顯示
+                selectionStatus.textContent = `{{ _("已添加") }} ${polygonPoints.length} {{ _("個點") }}，{{ _("點擊「完成圈選」完成（至少需要3個點）") }}`;
+                
+                // 重新繪製
+                if (ctx && floorplanImage) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(floorplanImage, 0, 0, canvas.width, canvas.height);
+                    updateGrid();
+                    drawPolygon();
+                }
+            });
+            
+            // 繪製矩形
+            function drawRect() {
+                if (!rectStartPoint || !rectEndPoint) return;
+                
+                const x1 = Math.min(rectStartPoint.x, rectEndPoint.x);
+                const y1 = Math.min(rectStartPoint.y, rectEndPoint.y);
+                const x2 = Math.max(rectStartPoint.x, rectEndPoint.x);
+                const y2 = Math.max(rectStartPoint.y, rectEndPoint.y);
+                
+                ctx.strokeStyle = '#667eea';
+                ctx.fillStyle = 'rgba(102, 126, 234, 0.2)';
+                ctx.lineWidth = 2;
+                
+                ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+                ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+            }
+            
+            // 繪製多邊形
+            function drawPolygon() {
+                if (polygonPoints.length < 2) return;
+                
+                ctx.strokeStyle = '#667eea';
+                ctx.fillStyle = 'rgba(102, 126, 234, 0.2)';
+                ctx.lineWidth = 2;
+                
+                ctx.beginPath();
+                ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+                for (let i = 1; i < polygonPoints.length; i++) {
+                    ctx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // 繪製頂點
+                ctx.fillStyle = '#667eea';
+                polygonPoints.forEach(p => {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
+            
+            // 判斷點是否在多邊形內（射線法）
+            function pointInPolygon(point, polygon) {
+                let inside = false;
+                for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+                    const xi = polygon[i].x, yi = polygon[i].y;
+                    const xj = polygon[j].x, yj = polygon[j].y;
+                    const intersect = ((yi > point.y) !== (yj > point.y)) &&
+                        (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+                    if (intersect) inside = !inside;
+                }
+                return inside;
+            }
+            
+            // 高亮顯示有效和無效的網格
+            function highlightCells() {
+                if (!gridData) return;
+                
+                // 收集所有區域的多邊形（包括當前正在繪製的）
+                const allPolygons = [];
+                
+                // 添加已完成的區域
+                selectedAreas.forEach(area => {
+                    const canvasPolygon = area.points.map(p => ({
+                        x: p.x * canvas.width,
+                        y: p.y * canvas.height
+                    }));
+                    if (canvasPolygon.length >= 3) {
+                        allPolygons.push(canvasPolygon);
+                    }
+                });
+                
+                // 添加當前正在繪製的區域
+                if (selectionMode === 'rect' && rectStartPoint && rectEndPoint) {
+                    const x1 = Math.min(rectStartPoint.x, rectEndPoint.x);
+                    const y1 = Math.min(rectStartPoint.y, rectEndPoint.y);
+                    const x2 = Math.max(rectStartPoint.x, rectEndPoint.x);
+                    const y2 = Math.max(rectStartPoint.y, rectEndPoint.y);
+                    
+                    allPolygons.push([
+                        { x: x1, y: y1 },
+                        { x: x2, y: y1 },
+                        { x: x2, y: y2 },
+                        { x: x1, y: y2 }
+                    ]);
+                } else if (selectionMode === 'polygon' && polygonPoints.length >= 3) {
+                    allPolygons.push(polygonPoints.map(p => ({ x: p.x, y: p.y })));
+                }
+                
+                if (allPolygons.length === 0) return;
+                
+                // 檢查每個網格的中心點（只要在任何一個區域內就標記為有效）
+                for (let row = 0; row < gridData.rows; row++) {
+                    for (let col = 0; col < gridData.cols; col++) {
+                        const centerX = (col + 0.5) * gridData.cellWidth;
+                        const centerY = (row + 0.5) * gridData.cellHeight;
+                        
+                        // 檢查點是否在任何一個區域內
+                        let isInside = false;
+                        for (const polygon of allPolygons) {
+                            if (pointInPolygon({ x: centerX, y: centerY }, polygon)) {
+                                isInside = true;
+                                break;
+                            }
+                        }
+                        
+                        // 繪製網格背景色
+                        ctx.fillStyle = isInside 
+                            ? 'rgba(46, 204, 113, 0.1)' 
+                            : 'rgba(231, 76, 60, 0.2)';
+                        ctx.fillRect(
+                            col * gridData.cellWidth,
+                            row * gridData.cellHeight,
+                            gridData.cellWidth,
+                            gridData.cellHeight
+                        );
+                    }
+                }
+                
+                // 重新繪製網格線
+                ctx.strokeStyle = 'rgba(102, 126, 234, 0.3)';
+                ctx.lineWidth = 1;
+                
+                for (let col = 0; col <= gridData.cols; col++) {
+                    const x = col * gridData.cellWidth;
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, canvas.height);
+                    ctx.stroke();
+                }
+                
+                for (let row = 0; row <= gridData.rows; row++) {
+                    const y = row * gridData.cellHeight;
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(canvas.width, y);
+                    ctx.stroke();
+                }
+                
+                // 重新繪製所有區域
+                drawAllAreas();
+                
+                // 繪製當前正在繪製的區域
+                if (selectionMode === 'rect' && rectStartPoint && rectEndPoint) {
+                    drawRect();
+                } else if (selectionMode === 'polygon' && polygonPoints.length > 0) {
+                    drawPolygon();
+                }
+            }
+        })();
+    </script>
 </body>
 </html>

@@ -18,6 +18,17 @@
         min-height: 100vh;
         display: flex;
         flex-direction: column;
+        /* 全站預設禁止一般文字反白選取（表單元素除外） */
+        -webkit-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
+
+      /* 表單元素仍允許選取文字，方便輸入編輯 */
+      input, textarea, select {
+        -webkit-user-select: text;
+        -ms-user-select: text;
+        user-select: text;
       }
       
       /* 導航列 */
@@ -239,6 +250,26 @@
         overflow: hidden;
       }
       
+      .photo-cells {
+        font-size: 13px;
+        color: #555;
+        margin-top: 6px;
+        line-height: 1.6;
+      }
+      
+      .cell-badge {
+        display: inline-block;
+        background: #eef2ff;
+        color: #4c51bf;
+        border-radius: 999px;
+        padding: 2px 8px;
+        margin-right: 4px;
+        margin-top: 2px;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      
       .empty-photos {
         text-align: center;
         padding: 60px 20px;
@@ -437,6 +468,11 @@
           <a href="{{ url_for('upload_page', exhibition_public_id=exhibition.public_id) }}" class="btn-primary">
             {{ _('照片影片隱私處理') }}
           </a>
+          {% if floors %}
+          <a href="{{ url_for('upload_exhibition_with_cells', exhibition_public_id=exhibition.public_id) }}" class="btn-primary" style="background: #17a2b8;">
+            {{ _('上傳並選擇區域') }}
+          </a>
+          {% endif %}
           <form action="{{ url_for('upload_to_exhibition', exhibition_public_id=exhibition.public_id) }}" method="POST" enctype="multipart/form-data" style="display: inline-block;">
             <input type="file" name="media" accept="image/*,video/*" required 
                    onchange="this.form.submit()" 
@@ -452,6 +488,48 @@
         </div>
         {% endif %}
       </div>
+      
+      {% if floors and selected_floor %}
+      <!-- 平面圖顯示區域 -->
+      <div class="floorplan-section" style="background: white; padding: 30px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08); margin-bottom: 30px;">
+        <h2 style="font-size: 24px; color: #333; margin-bottom: 20px;">{{ _('展覽平面圖') }}</h2>
+        
+        <div class="floor-selector" style="margin-bottom: 20px;">
+          <label style="font-weight: 600; margin-right: 10px;">{{ _('選擇樓層') }}：</label>
+          <select id="floorSelector" onchange="changeFloor(this.value)" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+            {% for floor in floors %}
+              <option value="{{ floor.floor_code }}" {% if floor.floor_code == selected_floor.floor_code %}selected{% endif %}>
+                {{ floor.floor_code }} ({{ floor.width_meters }}m × {{ floor.height_meters }}m)
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- 縮放控制 -->
+        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap;">
+          <button type="button" onclick="floorplanZoomIn()" style="background:#667eea;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-weight:600;">＋</button>
+          <button type="button" onclick="floorplanZoomOut()" style="background:#667eea;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-weight:600;">－</button>
+          <button type="button" onclick="floorplanResetView()" style="background:#95a5a6;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-weight:600;">{{ _('重置') }}</button>
+          <span id="floorplanZoomLabel" style="color:#666;font-size:14px;">100%</span>
+          <span style="color:#999;font-size:12px;">{{ _('滑鼠滾輪縮放、拖曳平移') }}</span>
+        </div>
+        
+        <div class="floorplan-container" id="floorplanContainer" style="position: relative; background: #f8f9fa; border: 2px solid #ddd; border-radius: 8px; overflow: auto; max-height: 600px;">
+          <!-- 將圖片與網格包在同一個 stage，縮放/平移時永遠一起動 -->
+          <div id="floorplanStage" style="position: relative; transform-origin: 0 0; cursor: grab; touch-action: none;">
+            <img id="floorplanImage" 
+                 src="{{ url_for('exhibition_floor_image', exhibition_public_id=exhibition.public_id, floor_code=selected_floor.floor_code) }}" 
+                 alt="{{ selected_floor.floor_code }}"
+                 style="display: block; max-width: 100%; height: auto;"
+                 onload="renderFloorplanCells()">
+            <!-- overlay 需要可接收點擊事件（點格子開啟 Modal） -->
+            <div class="floorplan-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: auto;">
+              <svg class="cell-grid" id="cellGrid" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: auto;"></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
       
       {% if photos %}
         <div class="photos-grid">
@@ -480,11 +558,16 @@
                      loading="lazy">
               {% endif %}
               <div class="photo-info">
-                {% if photo.title %}
-                  <h3 class="photo-title">{{ photo.title }}</h3>
-                {% endif %}
                 {% if photo.description %}
                   <p class="photo-description">{{ photo.description }}</p>
+                {% endif %}
+                {% if photo.cell_codes %}
+                  <p class="photo-cells">
+                    {{ _('區域') }}：
+                    {% for label in photo.cell_codes %}
+                      <span class="cell-badge">{{ label }}</span>
+                    {% endfor %}
+                  </p>
                 {% endif %}
               </div>
             </div>
@@ -516,6 +599,19 @@
       <img id="modalImage" src="" style="max-width: 90%; max-height: 90%; object-fit: contain; border-radius: 10px;">
     </div>
 
+    <!-- 區域媒體 Modal -->
+    {% if floors and selected_floor %}
+    <div id="cellMediaModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; justify-content: center; align-items: center;">
+      <div onclick="event.stopPropagation()" style="background: white; border-radius: 15px; padding: 30px; max-width: 90%; max-height: 90%; overflow-y: auto; position: relative; width: min(720px, 90vw);">
+        <button onclick="closeCellMediaModal()" style="position: absolute; top: 15px; right: 15px; background: #e74c3c; color: white; border: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 18px; font-weight: bold;">×</button>
+        <h2 id="cellModalTitle" style="font-size: 24px; color: #333; margin-bottom: 20px;">{{ _('區域媒體') }}</h2>
+        <div id="cellMediaContent" style="min-height: 200px; display: flex; align-items: center; justify-content: center;">
+          <p style="color: #999; text-align: center; padding: 40px; margin: 0;">{{ _('載入中...') }}</p>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <script>
       function openPhotoModal(photoId) {
         const modal = document.getElementById('photoModal');
@@ -537,8 +633,386 @@
       document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
           closePhotoModal();
+          closeCellMediaModal();
         }
       });
+
+      {% if floors and selected_floor %}
+      // 平面圖相關 JavaScript
+      const cellsData = {{ cells | tojson }};
+      const floorData = {
+        code: "{{ selected_floor.floor_code }}",
+        width: {{ selected_floor.width_meters }},
+        height: {{ selected_floor.height_meters }},
+        gridSize: {{ selected_floor.grid_size }}
+      };
+
+      // 縮放/平移狀態
+      let fpScale = 1;
+      let fpTx = 0;
+      let fpTy = 0;
+      let fpDragging = false;
+      let fpLastX = 0;
+      let fpLastY = 0;
+      // 用來區分「拖曳」與「點擊」：若本次操作有明顯移動，就視為拖曳，避免同時觸發點擊開啟 Modal
+      let fpMoved = false;
+      let fpDownTarget = null; // 記錄按下時的目標元素
+      let fpDownCellCode = null; // 記錄按下時的格子代碼
+      let fpDownX = 0; // 記錄按下時的 X 座標
+      let fpDownY = 0; // 記錄按下時的 Y 座標
+
+      function clamp(val, min, max) {
+        return Math.max(min, Math.min(max, val));
+      }
+
+      function applyFloorplanTransform() {
+        const stage = document.getElementById('floorplanStage');
+        const label = document.getElementById('floorplanZoomLabel');
+        if (!stage) return;
+        stage.style.transform = `translate(${fpTx}px, ${fpTy}px) scale(${fpScale})`;
+        if (label) label.textContent = `${Math.round(fpScale * 100)}%`;
+      }
+
+      function floorplanZoomIn() {
+        fpScale = clamp(fpScale * 1.05, 0.4, 4);
+        applyFloorplanTransform();
+      }
+
+      function floorplanZoomOut() {
+        fpScale = clamp(fpScale / 1.05, 0.4, 4);
+        applyFloorplanTransform();
+      }
+
+      function floorplanResetView() {
+        fpScale = 1;
+        // 盡量將平面圖置中顯示
+        const container = document.getElementById('floorplanContainer');
+        const img = document.getElementById('floorplanImage');
+        if (container && img) {
+          const cRect = container.getBoundingClientRect();
+          const imgWidth = img.naturalWidth || img.offsetWidth || cRect.width;
+          const imgHeight = img.naturalHeight || img.offsetHeight || cRect.height;
+          // 若圖片比容器小，置中；比容器大就從左上開始
+          fpTx = imgWidth < cRect.width ? (cRect.width - imgWidth) / 2 : 0;
+          fpTy = imgHeight < cRect.height ? (cRect.height - imgHeight) / 2 : 0;
+        } else {
+          fpTx = 0;
+          fpTy = 0;
+        }
+        applyFloorplanTransform();
+      }
+
+      function getGridSizeFromCells() {
+        if (!cellsData || cellsData.length === 0) {
+          return { cols: 0, rows: 0 };
+        }
+        // 只基於有效網格計算範圍
+        const maxCol = Math.max(...cellsData.map(c => c.col));
+        const maxRow = Math.max(...cellsData.map(c => c.row));
+        const minCol = Math.min(...cellsData.map(c => c.col));
+        const minRow = Math.min(...cellsData.map(c => c.row));
+        return { 
+          cols: maxCol - minCol + 1, 
+          rows: maxRow - minRow + 1,
+          minCol: minCol,
+          minRow: minRow
+        };
+      }
+      
+      function changeFloor(floorCode) {
+        window.location.href = "{{ url_for('exhibition_detail', exhibition_public_id=exhibition.public_id) }}?floor=" + floorCode;
+      }
+      
+      function renderFloorplanCells() {
+        const img = document.getElementById('floorplanImage');
+        const svg = document.getElementById('cellGrid');
+        if (!img || !svg) return;
+
+        // 用實際顯示尺寸做座標系，避免 overlay 對不齊/比例怪
+        // 注意：img 在 stage 內會被 scale；這裡要用「未縮放的基準尺寸」
+        const displayWidth = Math.round(img.offsetWidth);
+        const displayHeight = Math.round(img.offsetHeight);
+
+        svg.setAttribute('viewBox', `0 0 ${displayWidth} ${displayHeight}`);
+        svg.setAttribute('width', displayWidth);
+        svg.setAttribute('height', displayHeight);
+        svg.style.width = displayWidth + 'px';
+        svg.style.height = displayHeight + 'px';
+
+        // 計算網格尺寸（基於整個樓層）
+        const totalCols = Math.floor(floorData.width / floorData.gridSize);
+        const totalRows = Math.floor(floorData.height / floorData.gridSize);
+        const cellWidth = displayWidth / totalCols;
+        const cellHeight = displayHeight / totalRows;
+        
+        // 清空 SVG
+        svg.innerHTML = '';
+        
+        // 只繪製有效區域（cellsData 已經過濾了無效網格）
+        if (cellsData.length > 0) {
+          // 計算有效網格的範圍
+          const minCol = Math.min(...cellsData.map(c => c.col));
+          const maxCol = Math.max(...cellsData.map(c => c.col));
+          const minRow = Math.min(...cellsData.map(c => c.row));
+          const maxRow = Math.max(...cellsData.map(c => c.row));
+          
+          // 繪製整體邊界框（可選，用於視覺提示）
+          const boundaryRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          boundaryRect.setAttribute('x', minCol * cellWidth);
+          boundaryRect.setAttribute('y', minRow * cellHeight);
+          boundaryRect.setAttribute('width', (maxCol - minCol + 1) * cellWidth);
+          boundaryRect.setAttribute('height', (maxRow - minRow + 1) * cellHeight);
+          boundaryRect.style.fill = 'none';
+          boundaryRect.style.stroke = 'rgba(102, 126, 234, 0.2)';
+          boundaryRect.style.strokeWidth = '2';
+          boundaryRect.style.strokeDasharray = '5,5';
+          svg.appendChild(boundaryRect);
+        }
+        
+        // 繪製每個有效網格
+        cellsData.forEach(cell => {
+          const x = cell.col * cellWidth;
+          const y = cell.row * cellHeight;
+          
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', x);
+          rect.setAttribute('y', y);
+          rect.setAttribute('width', cellWidth);
+          rect.setAttribute('height', cellHeight);
+          rect.setAttribute('class', 'cell-box');
+          rect.setAttribute('data-cell-code', cell.cell_code);
+          rect.setAttribute('data-floor-code', floorData.code);
+          rect.style.cursor = 'pointer';
+          // 若該格子已有媒體，預設顯示更明顯（讓使用者看得出「這裡有內容」）
+          const hasMedia = (cell.media_count || 0) > 0;
+          // 使用更清晰的顏色區分有效網格
+          rect.style.fill = hasMedia ? 'rgba(46, 204, 113, 0.25)' : 'rgba(102, 126, 234, 0.15)';
+          // 恢復網格線顯示，但使用較細的線條避免視覺混亂
+          rect.style.stroke = 'rgba(102, 126, 234, 0.4)';
+          rect.style.strokeWidth = '1';
+          rect.addEventListener('mouseenter', function() {
+            this.style.fill = hasMedia ? 'rgba(46, 204, 113, 0.35)' : 'rgba(102, 126, 234, 0.25)';
+            this.style.stroke = '#667eea';
+            this.style.strokeWidth = '2';
+          });
+          rect.addEventListener('mouseleave', function() {
+            this.style.fill = hasMedia ? 'rgba(46, 204, 113, 0.25)' : 'rgba(102, 126, 234, 0.15)';
+            this.style.stroke = 'rgba(102, 126, 234, 0.4)';
+            this.style.strokeWidth = '1';
+          });
+          // 點擊功能現在通過 pointerup 事件處理（在拖移邏輯中）
+          
+          svg.appendChild(rect);
+        });
+      }
+
+      window.addEventListener('resize', () => {
+        // 視窗尺寸改變（例如切換成手機模式）時，重置縮放與平移，避免整個平面圖被移出可視區域
+        try {
+          floorplanResetView();
+          renderFloorplanCells();
+        } catch (e) {}
+      });
+
+      // 讓容器支援滾輪縮放與拖曳平移（stage 內圖片與 overlay 一起縮放/移動）
+      (function initFloorplanPanZoom() {
+        const container = document.getElementById('floorplanContainer');
+        const stage = document.getElementById('floorplanStage');
+        if (!container || !stage) return;
+        // 讓手機觸控可以拖移（避免瀏覽器把拖曳當成捲動/縮放頁面）
+        container.style.touchAction = 'none';
+
+        // 滾輪縮放（以游標位置為中心）
+        container.addEventListener('wheel', (e) => {
+          e.preventDefault();
+          const prevScale = fpScale;
+          // 每次固定 5%
+          const dy = e.deltaY || 0;
+          const step = 1.05;
+          const nextScale = clamp(dy > 0 ? fpScale / step : fpScale * step, 0.4, 4);
+          if (nextScale === prevScale) return;
+
+          const rect = container.getBoundingClientRect();
+          const cx = e.clientX - rect.left;
+          const cy = e.clientY - rect.top;
+
+          const sx = (cx - fpTx) / prevScale;
+          const sy = (cy - fpTy) / prevScale;
+
+          fpScale = nextScale;
+          fpTx = cx - sx * fpScale;
+          fpTy = cy - sy * fpScale;
+
+          applyFloorplanTransform();
+        }, { passive: false });
+
+        // 拖曳平移（支援手機/觸控：Pointer Events）- 允許在任何地方開始拖移
+        stage.addEventListener('pointerdown', (e) => {
+          // 只處理主要指標（避免多指干擾）
+          if (e.isPrimary === false) return;
+          fpMoved = false;
+          fpDownTarget = e.target;
+          fpDownX = e.clientX;
+          fpDownY = e.clientY;
+          
+          // 記錄是否點擊在格子上（檢查 rect 元素或其父元素）
+          let target = e.target;
+          let rectElement = null;
+          
+          // 如果點擊的是 rect，直接使用
+          if (target && target.tagName && target.tagName.toLowerCase() === 'rect') {
+            rectElement = target;
+          } else {
+            // 如果點擊的是 SVG 或其他元素，嘗試找到最近的 rect 父元素
+            let parent = target;
+            while (parent && parent !== stage) {
+              if (parent.tagName && parent.tagName.toLowerCase() === 'rect') {
+                rectElement = parent;
+                break;
+              }
+              parent = parent.parentElement;
+            }
+          }
+          
+          if (rectElement) {
+            fpDownCellCode = rectElement.getAttribute('data-cell-code');
+          } else {
+            fpDownCellCode = null;
+          }
+          
+          fpDragging = true;
+          fpLastX = e.clientX;
+          fpLastY = e.clientY;
+          stage.style.cursor = 'grabbing';
+          try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+        });
+
+        stage.addEventListener('pointermove', (e) => {
+          if (!fpDragging) return;
+          const dx = e.clientX - fpLastX;
+          const dy = e.clientY - fpLastY;
+          const moveDistance = Math.abs(dx) + Math.abs(dy);
+          
+          // 如果移動距離超過 5px，視為拖移並更新位置
+          if (moveDistance > 5) {
+            fpMoved = true;
+            fpLastX = e.clientX;
+            fpLastY = e.clientY;
+            fpTx += dx;
+            fpTy += dy;
+            applyFloorplanTransform();
+          }
+          // 觸控拖曳時避免頁面捲動
+          e.preventDefault();
+        }, { passive: false });
+
+        stage.addEventListener('pointerup', (e) => {
+          if (!fpDragging) {
+            fpDownTarget = null;
+            fpDownCellCode = null;
+            fpMoved = false;
+            return;
+          }
+          
+          // 計算從按下到放開的總移動距離
+          const totalDx = Math.abs(e.clientX - fpDownX);
+          const totalDy = Math.abs(e.clientY - fpDownY);
+          const totalDistance = totalDx + totalDy;
+          
+          // 如果移動距離很小（小於 5px），且點擊的是格子，則觸發選擇而不是拖移
+          if (totalDistance < 5 && fpDownCellCode) {
+            // 檢查點擊的格子是否是有效的
+            const clickedCell = cellsData.find(c => c.cell_code === fpDownCellCode);
+            if (!clickedCell || !clickedCell.is_active) {
+              // 無效的格子，不處理點擊
+              fpDragging = false;
+              fpDownTarget = null;
+              fpDownCellCode = null;
+              fpMoved = false;
+              stage.style.cursor = 'grab';
+              try { stage.releasePointerCapture(e.pointerId); } catch (_) {}
+              return;
+            }
+            
+            // 確保阻止事件冒泡，避免觸發其他事件
+            e.stopPropagation();
+            loadCellMedia(floorData.code, fpDownCellCode);
+          }
+          
+          fpDragging = false;
+          fpDownTarget = null;
+          fpDownCellCode = null;
+          fpMoved = false; // 重置移動標記
+          stage.style.cursor = 'grab';
+          try { stage.releasePointerCapture(e.pointerId); } catch (_) {}
+        });
+
+        stage.addEventListener('pointercancel', (e) => {
+          fpDragging = false;
+          fpDownTarget = null;
+          fpDownCellCode = null;
+          fpMoved = false;
+          stage.style.cursor = 'grab';
+          try { stage.releasePointerCapture(e.pointerId); } catch (_) {}
+        });
+
+        // 初始 label
+        applyFloorplanTransform();
+      })();
+      
+      function loadCellMedia(floorCode, cellCode) {
+        const modal = document.getElementById('cellMediaModal');
+        const title = document.getElementById('cellModalTitle');
+        const content = document.getElementById('cellMediaContent');
+        
+        title.textContent = `{{ _('區域') }} ${cellCode} - {{ _('媒體') }}`;
+        content.innerHTML = '<p style="color: #999; text-align: center; padding: 40px;">{{ _("載入中...") }}</p>';
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        
+        fetch(`{{ url_for('exhibition_detail', exhibition_public_id=exhibition.public_id) }}/floors/${floorCode}/cells/${cellCode}/media`)
+          .then(response => response.json())
+          .then(data => {
+            if (data.media && data.media.length > 0) {
+              let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px;">';
+              data.media.forEach(media => {
+                const isVideo = media.file_type === 'video';
+                const previewUrl = media.preview_url || '';
+                html += `
+                  <div style="background: #f8f9fa; border-radius: 8px; overflow: hidden;">
+                    ${isVideo ? 
+                      `<video src="${media.url}" controls style="width: 100%; height: auto;"></video>` :
+                      `<img src="${previewUrl || media.url}" style="width: 100%; height: auto; display: block;" onerror="this.src='${media.url}'">`
+                    }
+                    <!-- 不顯示檔名，保持介面乾淨 -->
+                  </div>
+                `;
+              });
+              html += '</div>';
+              content.innerHTML = html;
+            } else {
+              content.innerHTML = '<p style="color: #999; text-align: center; padding: 40px; margin: 0;">{{ _("此區域尚無媒體檔案") }}</p>';
+            }
+          })
+          .catch(error => {
+            console.error('Error loading cell media:', error);
+            content.innerHTML = '<p style="color: #e74c3c; text-align: center; padding: 40px;">{{ _("載入失敗") }}</p>';
+          });
+      }
+      
+      function closeCellMediaModal() {
+        const modal = document.getElementById('cellMediaModal');
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+      }
+      
+      // 點擊 Modal 背景關閉
+      document.getElementById('cellMediaModal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+          closeCellMediaModal();
+        }
+      });
+      {% endif %}
     </script>
   </body>
 </html>

@@ -142,6 +142,13 @@ class User(UserMixin, db.Model):
         return f"<User {self.email}>"
 
 
+media_cells = db.Table(
+    "media_cells",
+    db.Column("media_id", db.Integer, db.ForeignKey("media.id"), primary_key=True),
+    db.Column("cell_id", db.Integer, db.ForeignKey("exhibition_cells.id"), primary_key=True),
+)
+
+
 class Media(db.Model):
     """
     媒體檔案資料表
@@ -170,6 +177,13 @@ class Media(db.Model):
     
     # 關聯：上傳者（多對一）
     user = db.relationship("User", backref="media_files")
+
+    # 關聯：所屬展覽區域（多對多，一個媒體可以掛在多個 Cell 上）
+    cells = db.relationship(
+        "ExhibitionCell",
+        secondary=media_cells,
+        backref="media_files",
+    )
     
     def __repr__(self):
         """物件的字串表示（用於除錯）"""
@@ -203,9 +217,90 @@ class Exhibition(db.Model):
     
     # 關聯：展覽的媒體檔案（一對多）
     media_files = db.relationship("Media", backref="exhibition", lazy="dynamic")
+
+    # 關聯：展覽的樓層（一對多，例如 F001、F002...）
+    floors = db.relationship(
+        "ExhibitionFloor",
+        back_populates="exhibition",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
     
     def __repr__(self):
         return f"<Exhibition {self.title}>"
+
+
+class ExhibitionFloor(db.Model):
+    """
+    展覽樓層資料表（含平面圖與實際尺寸）
+    例：F001, F002 ...
+    """
+    __tablename__ = "exhibition_floors"
+
+    id = db.Column(db.Integer, primary_key=True)
+    exhibition_id = db.Column(db.Integer, db.ForeignKey("exhibitions.id"), nullable=False, index=True)
+
+    # 對外樓層代碼，例如 F001、F002（每個展覽內唯一）
+    floor_code = db.Column(db.String(10), nullable=False)
+
+    # 樓層平面圖路徑（相對於專案根目錄）
+    image_path = db.Column(db.String(500), nullable=False)
+
+    # 實際尺寸（單位：公尺）
+    width_meters = db.Column(db.Float, nullable=False)
+    height_meters = db.Column(db.Float, nullable=False)
+
+    # 此樓層的網格大小（公尺），預設 1m×1m，可依樓層調整
+    grid_size = db.Column(db.Float, default=1.0)
+
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    exhibition = db.relationship("Exhibition", back_populates="floors")
+    cells = db.relationship("ExhibitionCell", back_populates="floor", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        db.UniqueConstraint("exhibition_id", "floor_code", name="uq_exhibition_floor_code"),
+    )
+
+    def __repr__(self):
+        return f"<ExhibitionFloor {self.exhibition_id}:{self.floor_code}>"
+
+
+class ExhibitionCell(db.Model):
+    """
+    展覽樓層上的區域（Cell）
+    UI 對外使用 cell_code（例如 C000001），內部使用 row / col 做排序與點擊定位。
+    """
+    __tablename__ = "exhibition_cells"
+
+    id = db.Column(db.Integer, primary_key=True)
+    floor_id = db.Column(db.Integer, db.ForeignKey("exhibition_floors.id"), nullable=False, index=True)
+
+    # 對外區域代碼，例如 C000001（每層重置）
+    cell_code = db.Column(db.String(10), nullable=False)
+
+    # 內部用網格座標：row 從上到下、col 從左到右（從 0 起算）
+    row = db.Column(db.Integer, nullable=False)
+    col = db.Column(db.Integer, nullable=False)
+
+    # 顯示名稱（可由創建人自訂），預設可為「區域 C000001」之類
+    name = db.Column(db.String(200))
+
+    # 是否為有效區域（牆壁、樓梯等可標記為 False）
+    is_active = db.Column(db.Boolean, default=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+    floor = db.relationship("ExhibitionFloor", back_populates="cells")
+
+    __table_args__ = (
+        db.UniqueConstraint("floor_id", "cell_code", name="uq_floor_cell_code"),
+        db.UniqueConstraint("floor_id", "row", "col", name="uq_floor_row_col"),
+    )
+
+    def __repr__(self):
+        return f"<ExhibitionCell {self.floor_id}:{self.cell_code} ({self.row},{self.col})>"
 
 
 class ExhibitionPhoto(db.Model):

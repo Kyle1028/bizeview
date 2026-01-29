@@ -254,6 +254,85 @@ msgstr "Processing Complete"
 msgid "您的瀏覽器不支援影片播放"
 msgstr "Your browser does not support video playback"
 
+# Floor plan & grid system (exhibition floors / cells)
+msgid "上傳並選擇區域"
+msgstr "Upload and Select Areas"
+
+msgid "展覽平面圖"
+msgstr "Exhibition Floor Plan"
+
+msgid "樓層管理"
+msgstr "Floor Management"
+
+msgid "區域管理"
+msgstr "Area Management"
+
+msgid "平面圖尺寸"
+msgstr "Floor Plan Size"
+
+msgid "網格大小"
+msgstr "Grid Size"
+
+msgid "區域總數"
+msgstr "Total Areas"
+
+msgid "區域數量"
+msgstr "Number of Areas"
+
+msgid "區域代碼"
+msgstr "Area Code"
+
+msgid "位置"
+msgstr "Position"
+
+msgid "區域名稱（可選）"
+msgstr "Area Name (optional)"
+
+msgid "媒體數量"
+msgstr "Media Count"
+
+msgid "區域媒體"
+msgstr "Area Media"
+
+msgid "此區域尚無媒體檔案"
+msgstr "No media files in this area yet"
+
+msgid "載入中..."
+msgstr "Loading..."
+
+msgid "載入失敗"
+msgstr "Failed to load"
+
+msgid "選擇樓層"
+msgstr "Select Floor"
+
+msgid "重置"
+msgstr "Reset"
+
+msgid "滑鼠滾輪縮放、拖曳平移"
+msgstr "Scroll to zoom, drag to pan"
+
+msgid "區域"
+msgstr "Area"
+
+msgid "樓層平面圖（F001）"
+msgstr "Floor Plan (F001)"
+
+msgid "選擇此展覽第一層的平面圖（可選），系統會依實際尺寸與網格大小切成區域 C000001..."
+msgstr "Select the floor plan for the first floor of this exhibition (optional). The system will cut it into areas C000001... according to the actual size and grid size."
+
+msgid "實際寬度（公尺）"
+msgstr "Actual Width (meters)"
+
+msgid "實際高度（公尺）"
+msgstr "Actual Height (meters)"
+
+msgid "網格大小（公尺，預設 1）"
+msgstr "Grid Size (meters, default 1)"
+
+msgid "此展覽目前已有下列樓層："
+msgstr "This exhibition currently has the following floors:"
+
 msgid "處理結果"
 msgstr "Processing Result"
 
@@ -368,7 +447,7 @@ msgstr "Exhibition Management"
 msgid "用戶管理"
 msgstr "User Management"
 
-msgid "創建新展覽"
+msgid "建立新展覽"
 msgstr "Create New Exhibition"
 
 msgid "編輯展覽"
@@ -392,7 +471,7 @@ msgstr "Cover Image"
 msgid "立即發布（公開展覽）"
 msgstr "Publish Now (Public Exhibition)"
 
-msgid "創建展覽"
+msgid "建立展覽"
 msgstr "Create Exhibition"
 
 msgid "更新展覽"
@@ -416,7 +495,7 @@ msgstr "Draft"
 msgid "目前尚無展覽"
 msgstr "No Exhibitions Available"
 
-msgid "點擊「創建新展覽」開始創建您的第一個展覽"
+msgid "點擊「建立新展覽」開始建立您的第一個展覽"
 msgstr "Click \"Create New Exhibition\" to create your first exhibition"
 
 msgid "ID"

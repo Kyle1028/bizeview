@@ -396,7 +396,7 @@
                 <h1>{{ _('展覽管理') }}</h1>
                 <p>{{ _('管理您的展覽，創建、編輯或刪除展覽') }}</p>
             </div>
-            <a href="{{ url_for('admin.create_exhibition') }}" class="btn-create">+ {{ _('創建新展覽') }}</a>
+            <a href="{{ url_for('admin.create_exhibition') }}" class="btn-create">+ {{ _('建立新展覽') }}</a>
         </div>
 
         <!-- Flash 訊息 -->
@@ -451,7 +451,7 @@
         {% else %}
             <div class="empty-state">
                 <h2>{{ _('目前尚無展覽') }}</h2>
-                <p>{{ _('點擊「創建新展覽」開始創建您的第一個展覽') }}</p>
+                <p>{{ _('點擊「建立新展覽」開始建立您的第一個展覽') }}</p>
             </div>
         {% endif %}
     </div>

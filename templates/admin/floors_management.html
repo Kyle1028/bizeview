@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/static/logo-icon.png" />
+    <title>{{ _('樓層管理') }} - {{ exhibition.title }} - 商景 Bizeview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            /* 全站預設禁止一般文字反白選取（表單元素除外） */
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
+        /* 表單元素仍允許選取文字，方便輸入編輯 */
+        input, textarea, select {
+            -webkit-user-select: text;
+            -ms-user-select: text;
+            user-select: text;
+        }
+        
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .navbar-brand {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .navbar-brand a {
+            text-decoration: none;
+            color: inherit;
+        }
+        
+        .navbar-brand img {
+            height: 40px;
+            vertical-align: middle;
+        }
+        
+        .navbar-user {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .user-email {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .nav-link {
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 10px 20px;
+            border-radius: 6px;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
+        }
+        
+        .nav-link:hover {
+            background: #5568d3;
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 100px 20px 40px 20px;
+        }
+        
+        .page-header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            margin-bottom: 30px;
+        }
+        
+        .page-header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .page-header .breadcrumb {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .page-header .breadcrumb a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .floors-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .floor-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s;
+        }
+        
+        .floor-card:hover {
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+            transform: translateY(-2px);
+        }
+        
+        .floor-code {
+            font-size: 24px;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        
+        .floor-info {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        
+        .floor-info strong {
+            color: #333;
+        }
+        
+        .floor-actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+            display: inline-block;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+        
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+        
+        .empty-state {
+            background: white;
+            padding: 60px;
+            border-radius: 15px;
+            text-align: center;
+            color: #999;
+        }
+        
+        .empty-state h2 {
+            color: #666;
+            margin-bottom: 10px;
+        }
+        
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+        
+        .flash-message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .flash-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .flash-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <a href="{{ url_for('index') }}">
+                <img src="/static/logo.png" alt="商景 Bizeview" style="height: 40px; vertical-align: middle;">
+            </a>
+        </div>
+        <div class="navbar-user">
+            {% if current_user.is_authenticated %}
+                {% include '_language_switcher.html' %}
+                <span class="user-email">👤 {{ current_user.username or current_user.email }}</span>
+                {% include '_settings_dropdown.html' %}
+            {% else %}
+                {% include '_language_switcher.html' %}
+                <a href="{{ url_for('auth.login') }}" class="nav-link">{{ _('登入') }}</a>
+                <a href="{{ url_for('auth.register') }}" class="nav-link">{{ _('註冊') }}</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>{{ _('樓層管理') }}</h1>
+            <div class="breadcrumb">
+                <a href="{{ url_for('admin.exhibitions_list') }}">{{ _('展覽列表') }}</a> > 
+                <a href="{{ url_for('admin.edit_exhibition', exhibition_public_id=exhibition.public_id) }}">{{ exhibition.title }}</a> > 
+                {{ _('樓層管理') }}
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% if floors %}
+            <div class="floors-grid">
+                {% for floor in floors %}
+                    <div class="floor-card">
+                        <div class="floor-code">{{ floor.floor_code }}</div>
+                        <div class="floor-info">
+                            <strong>{{ _('平面圖尺寸') }}：</strong>{{ floor.width_meters }}m × {{ floor.height_meters }}m
+                        </div>
+                        <div class="floor-info">
+                            <strong>{{ _('網格大小') }}：</strong>{{ floor.grid_size }}m × {{ floor.grid_size }}m
+                        </div>
+                        <div class="floor-info">
+                            <strong>{{ _('區域數量') }}：</strong>{{ floor.cells|length }} {{ _('個') }}
+                        </div>
+                        <div class="floor-info">
+                            <strong>{{ _('建立時間') }}：</strong>{{ floor.created_at.strftime('%Y-%m-%d %H:%M') if floor.created_at else '-' }}
+                        </div>
+                        <div class="floor-actions">
+                            <a href="{{ url_for('admin.cells_management', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}" class="btn btn-primary">
+                                {{ _('管理區域') }}
+                            </a>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <h2>{{ _('此展覽尚無樓層') }}</h2>
+                <p>{{ _('請在編輯展覽時上傳樓層平面圖並設定尺寸') }}</p>
+                <a href="{{ url_for('admin.edit_exhibition', exhibition_public_id=exhibition.public_id) }}" class="btn btn-primary" style="margin-top: 20px;">
+                    {{ _('編輯展覽') }}
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

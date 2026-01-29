@@ -475,7 +475,7 @@
                 </p>
             </div>
             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                <a href="{{ url_for('media_list') }}" class="btn-back">← {{ _('返回') }}</a>
+                <a href="{% if exhibition %}{{ url_for('exhibition_detail', exhibition_public_id=exhibition.public_id) }}{% else %}{{ url_for('media_list') }}{% endif %}" class="btn-back">← {{ _('返回') }}</a>
                 {% if exhibition %}
                 <form action="{{ url_for('upload_to_exhibition', exhibition_public_id=exhibition.public_id) }}?redirect=media" method="POST" enctype="multipart/form-data" style="display: inline-block;">
                     <input type="file" name="media" accept="image/*,video/*" required style="display: none;" id="upload-input-exhibition">

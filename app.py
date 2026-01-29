@@ -9,13 +9,23 @@ from pathlib import Path
 
 import cv2  # OpenCV：影像處理
 import numpy as np  # NumPy：數值運算
-from flask import Flask, render_template, request, send_from_directory, abort, url_for, redirect, session, flash
+from flask import Flask, render_template, request, send_from_directory, abort, url_for, redirect, session, flash, jsonify
 from flask_login import login_required, current_user
 from flask_babel import Babel, gettext as _, lazy_gettext
 
 from sqlalchemy import or_, and_
 from core.auth import init_auth  # 認證系統
-from core.models import db, Media, Exhibition, ExhibitionPhoto, User, _media_id_from_seq, _refresh_media_id_suffix  # 資料庫模型
+from core.models import (
+    db,
+    Media,
+    Exhibition,
+    ExhibitionPhoto,
+    User,
+    ExhibitionFloor,
+    ExhibitionCell,
+    _media_id_from_seq,
+    _refresh_media_id_suffix,
+)  # 資料庫模型
 from core.media_processor import MediaProcessor  # 媒體處理模組
 
 # 匯入 MediaPipe（用於人臉偵測）
@@ -47,6 +57,41 @@ EXHIBITION_DIR = BASE_DIR / "exhibitions"              # 展覽照片目錄
 # 自動建立所有需要的目錄（如果不存在）
 for d in (UPLOAD_IMAGE_DIR, UPLOAD_VIDEO_DIR, OUTPUT_IMAGE_DIR, OUTPUT_VIDEO_DIR, PREVIEW_DIR, METADATA_DIR, EXHIBITION_DIR):
     d.mkdir(parents=True, exist_ok=True)
+
+
+def generate_cells_for_floor(floor: ExhibitionFloor) -> list[ExhibitionCell]:
+    """
+    根據樓層的實際尺寸與 grid_size，自動產生該樓層的區域 Cell。
+    - 每個樓層的 Cell 代碼從 C000001 重新編號。
+    - 依「上到下、左到右」順序產生 row/col 與 cell_code。
+    """
+    if not floor.width_meters or not floor.height_meters or not floor.grid_size:
+        return []
+
+    cols = int(floor.width_meters / floor.grid_size)
+    rows = int(floor.height_meters / floor.grid_size)
+
+    cells: list[ExhibitionCell] = []
+    idx = 1
+
+    for row in range(rows):
+        for col in range(cols):
+            code = f"C{idx:06d}"
+            cell = ExhibitionCell(
+                floor_id=floor.id,
+                cell_code=code,
+                row=row,
+                col=col,
+                name=f"區域 {code}",
+                is_active=True,
+            )
+            cells.append(cell)
+            idx += 1
+
+    if cells:
+        db.session.add_all(cells)
+
+    return cells
 
 
 # ==================== Flask 應用程式設定 ====================
@@ -1107,6 +1152,39 @@ def exhibition_detail(exhibition_public_id):
         
         # 如果檔案存在，才加入列表
         if full_path.exists():
+            # 預設：區域資訊為空列表，避免模板存取錯誤
+            photo.cell_codes = []
+            
+            # 嘗試找出對應的 Media 記錄，以便顯示此照片所屬的展覽區域（Cell）
+            try:
+                photo_filename = full_path.name
+                linked_media = Media.query.filter(
+                    (Media.upload_path.like(f"%{photo_filename}")) |
+                    (Media.output_path.like(f"%{photo_filename}")) |
+                    (Media.upload_path == str(photo.photo_path)) |
+                    (Media.upload_path == str(full_path)) |
+                    (Media.output_path == str(photo.photo_path)) |
+                    (Media.output_path == str(full_path))
+                ).first()
+                
+                # 若找到對應的 Media，整理其所有關聯的區域代碼（依樓層與 cell_code 排序）
+                if linked_media and linked_media.cells:
+                    labels = []
+                    for cell in linked_media.cells:
+                        try:
+                            floor_code = getattr(cell.floor, "floor_code", "")
+                        except Exception:
+                            floor_code = ""
+                        # 優先顯示 F+C 組合，若無樓層代碼則只顯示 C 碼
+                        label = f"{floor_code} {cell.cell_code}".strip()
+                        labels.append(label)
+                    # 去重並排序，避免重複顯示
+                    unique_labels = sorted(set(labels))
+                    photo.cell_codes = unique_labels
+            except Exception:
+                # 若關聯查詢失敗，不影響基礎照片顯示，只是不顯示區域資訊
+                photo.cell_codes = []
+            
             photos.append(photo)
         else:
             # 檔案不存在，自動刪除資料庫記錄
@@ -1122,7 +1200,44 @@ def exhibition_detail(exhibition_public_id):
         except Exception:
             db.session.rollback()
     
-    return render_template("exhibition_detail.html", exhibition=exhibition, photos=photos)
+    # 載入樓層資訊（如果有）
+    floors = list(exhibition.floors)
+    floors.sort(key=lambda f: f.floor_code)
+    
+    # 預設顯示第一個樓層（或由參數指定）
+    selected_floor_code = request.args.get("floor", floors[0].floor_code if floors else None)
+    selected_floor = None
+    cells = []
+    
+    if floors and selected_floor_code:
+        selected_floor = next((f for f in floors if f.floor_code == selected_floor_code), floors[0])
+        if selected_floor:
+            # 只獲取有效的網格（is_active=True）
+            _cells = [c for c in selected_floor.cells if c.is_active]
+            _cells.sort(key=lambda c: (c.row, c.col))
+            # 轉成可 JSON 序列化的 dict（供 template |tojson 使用）
+            cells = [
+                {
+                    "id": c.id,
+                    "cell_code": c.cell_code,
+                    "row": c.row,
+                    "col": c.col,
+                    "name": c.name,
+                    "is_active": bool(c.is_active),
+                    # 用於前端標示哪些格子已有媒體
+                    "media_count": len(getattr(c, "media_files", []) or []),
+                }
+                for c in _cells
+            ]
+    
+    return render_template(
+        "exhibition_detail.html",
+        exhibition=exhibition,
+        photos=photos,
+        floors=floors,
+        selected_floor=selected_floor,
+        cells=cells,
+    )
 
 
 @app.route("/exhibition/<exhibition_public_id>/cover")
@@ -1154,6 +1269,122 @@ def exhibition_cover(exhibition_public_id):
         abort(404, f"封面圖片不存在: {full_path}")
     
     return send_from_directory(full_path.parent, full_path.name, as_attachment=False)
+
+
+@app.route("/exhibition/<exhibition_public_id>/floor/<floor_code>/image")
+def exhibition_floor_image(exhibition_public_id, floor_code):
+    """
+    提供展覽樓層平面圖（對外使用 public_id）
+    """
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
+    
+    floor = next((f for f in exhibition.floors if f.floor_code == floor_code), None)
+    if not floor:
+        abort(404, "找不到該樓層")
+    
+    # 檢查展覽是否公開
+    if not exhibition.is_published:
+        # 只有展覽創建者或管理員可以查看未公開的展覽
+        if not current_user.is_authenticated or not current_user.can_manage_exhibition(exhibition):
+            abort(403, "此展覽尚未公開")
+    
+    # 構建完整路徑
+    image_path = Path(floor.image_path)
+    if image_path.is_absolute():
+        full_path = image_path
+    else:
+        full_path = BASE_DIR / image_path
+    
+    if not full_path.exists():
+        abort(404, f"樓層平面圖不存在: {full_path}")
+    
+    return send_from_directory(full_path.parent, full_path.name, as_attachment=False)
+
+
+@app.route("/exhibition/<exhibition_public_id>/floors/<floor_code>/cells/<cell_code>/media")
+def get_cell_media(exhibition_public_id, floor_code, cell_code):
+    """
+    取得指定區域的所有媒體（JSON API，供 Modal 使用）
+    """
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
+    
+    # 檢查展覽是否公開
+    if not exhibition.is_published:
+        if not current_user.is_authenticated or not current_user.can_manage_exhibition(exhibition):
+            abort(403, "此展覽尚未公開")
+    
+    # 找到對應的樓層和區域
+    floor = next((f for f in exhibition.floors if f.floor_code == floor_code), None)
+    if not floor:
+        abort(404, "找不到該樓層")
+    
+    cell = next((c for c in floor.cells if c.cell_code == cell_code), None)
+    if not cell:
+        abort(404, "找不到該區域")
+    
+    # 取得該區域的所有媒體（透過多對多關聯）
+    media_list = []
+    for media in cell.media_files:
+        # 注意：/uploads/* 與 /outputs/* 目前需要登入才能存取。
+        # 但展覽是給訪客看的，所以這裡改成回傳「展覽專用公開媒體 URL」。
+        media_url = url_for("exhibition_media", exhibition_public_id=exhibition.public_id, media_id=media.media_id)
+        preview_url = ""
+        
+        media_list.append({
+            "media_id": media.media_id,
+            "original_filename": media.original_filename,
+            "file_type": media.file_type,
+            "url": media_url,
+            "preview_url": preview_url,
+            "status": media.status,
+        })
+    
+    return jsonify({
+        "floor_code": floor_code,
+        "cell_code": cell_code,
+        "cell_name": cell.name or cell_code,
+        "media": media_list,
+        "count": len(media_list),
+    })
+
+
+@app.route("/exhibition/<exhibition_public_id>/media/<media_id>")
+def exhibition_media(exhibition_public_id, media_id):
+    """
+    提供展覽內媒體檔案（公開展覽可直接瀏覽；未公開需管理權限）
+    - 圖片：回傳 processed(output) 優先，否則 upload
+    - 影片：同上
+    """
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
+
+    # 檢查展覽是否公開
+    if not exhibition.is_published:
+        if not current_user.is_authenticated or not current_user.can_manage_exhibition(exhibition):
+            abort(403, "此展覽尚未公開")
+
+    media = Media.query.filter_by(media_id=media_id, exhibition_id=exhibition.id).first()
+    if not media:
+        abort(404, "找不到該媒體")
+
+    file_path = None
+    if media.status == "processed" and media.output_path:
+        p = Path(media.output_path)
+        if not p.is_absolute():
+            p = BASE_DIR / p
+        if p.exists():
+            file_path = p
+
+    if file_path is None and media.upload_path:
+        p = Path(media.upload_path)
+        if not p.is_absolute():
+            p = BASE_DIR / p
+        if p.exists():
+            file_path = p
+
+    if file_path is None:
+        abort(404, "檔案不存在")
+
+    return send_from_directory(file_path.parent, file_path.name, as_attachment=False)
 
 
 @app.route("/exhibition/<exhibition_public_id>/photo/<int:photo_id>")
@@ -1267,6 +1498,180 @@ def options(media_id):
         is_video=is_video,
         preview_url=preview_url,
         faces=faces_info,
+    )
+
+
+@app.route("/upload/exhibition/<exhibition_public_id>/select-cells", methods=["GET", "POST"])
+@login_required
+def upload_exhibition_with_cells(exhibition_public_id):
+    """
+    上傳媒體並選擇區域（對外使用 public_id）
+    GET：顯示平面圖選擇頁面
+    POST：處理上傳並關聯選中的區域
+    """
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
+    
+    # 檢查展覽是否有樓層
+    floors = list(exhibition.floors)
+    if not floors:
+        flash(_("此展覽尚未設定樓層平面圖，請先編輯展覽並上傳平面圖"), "error")
+        return redirect(url_for("exhibition_detail", exhibition_public_id=exhibition.public_id))
+    
+    if request.method == "POST":
+        # 處理上傳
+        file = request.files.get("media")
+        if not file or not file.filename:
+            flash(_("未提供檔案"), "error")
+            return redirect(url_for("upload_exhibition_with_cells", exhibition_public_id=exhibition.public_id))
+        
+        # 取得選中的區域 cell_id 列表
+        selected_cell_ids = request.form.getlist("selected_cells")
+        if not selected_cell_ids:
+            flash(_("請至少選擇一個區域"), "error")
+            return redirect(url_for("upload_exhibition_with_cells", exhibition_public_id=exhibition.public_id))
+        
+        # 檢查檔案格式
+        original_filename = file.filename
+        ext = Path(file.filename).suffix.lower()
+        if ext not in ALLOWED_IMAGE_EXT and ext not in ALLOWED_VIDEO_EXT:
+            flash(_("檔案格式不支援"), "error")
+            return redirect(url_for("upload_exhibition_with_cells", exhibition_public_id=exhibition.public_id))
+        
+        # 暫時 ID，存檔後再換成 8+15位序號+4碼隨機
+        media_id = _temp_media_id()
+        
+        # 按日期組織檔案並保存
+        upload_date = datetime.now()
+        if ext in ALLOWED_IMAGE_EXT:
+            date_dir = UPLOAD_IMAGE_DIR / str(upload_date.year) / f"{upload_date.month:02d}"
+            date_dir.mkdir(parents=True, exist_ok=True)
+            saved_path = date_dir / f"{media_id}{ext}"
+            file_type = "image"
+        else:
+            date_dir = UPLOAD_VIDEO_DIR / str(upload_date.year) / f"{upload_date.month:02d}"
+            date_dir.mkdir(parents=True, exist_ok=True)
+            saved_path = date_dir / f"{media_id}{ext}"
+            file_type = "video"
+        
+        file.save(saved_path)
+        
+        # 將路徑轉換為相對路徑
+        saved_path_obj = Path(saved_path)
+        if saved_path_obj.is_absolute():
+            try:
+                relative_path = saved_path_obj.relative_to(BASE_DIR)
+            except ValueError:
+                relative_path = saved_path_obj
+        else:
+            relative_path = saved_path_obj
+        
+        # 生成預覽圖
+        thumbnail_path = str(relative_path)
+        if file_type == "video":
+            try:
+                cap = cv2.VideoCapture(str(saved_path))
+                ret, frame = cap.read()
+                cap.release()
+                if ret:
+                    preview_path = PREVIEW_DIR / f"{media_id}_preview.jpg"
+                    cv2.imwrite(str(preview_path), frame)
+                    thumbnail_path = str(preview_path.relative_to(BASE_DIR))
+            except Exception:
+                pass
+        else:
+            try:
+                image = cv2.imread(str(saved_path))
+                if image is not None:
+                    preview_path = PREVIEW_DIR / f"{media_id}_preview.jpg"
+                    cv2.imwrite(str(preview_path), image)
+                    thumbnail_path = str(preview_path.relative_to(BASE_DIR))
+            except Exception:
+                pass
+        
+        # 獲取該展覽現有的照片數量
+        max_order = db.session.query(db.func.max(ExhibitionPhoto.display_order)).filter_by(
+            exhibition_id=exhibition.id
+        ).scalar() or -1
+        
+        # 創建 Media 記錄
+        media_record = Media(
+            media_id=media_id,
+            original_filename=original_filename,
+            file_type=file_type,
+            upload_path=str(saved_path),
+            face_count=0,
+            status="uploaded",
+            user_id=current_user.id,
+            exhibition_id=exhibition.id,
+        )
+        db.session.add(media_record)
+        
+        # 創建展覽照片記錄
+        exhibition_photo = ExhibitionPhoto(
+            exhibition_id=exhibition.id,
+            photo_path=str(relative_path),
+            thumbnail_path=thumbnail_path,
+            title=original_filename,
+            description="",
+            display_order=max_order + 1,
+            created_at=datetime.now()
+        )
+        db.session.add(exhibition_photo)
+        db.session.commit()
+        _apply_real_media_id(media_record)
+        db.session.commit()
+        
+        # 關聯選中的區域
+        try:
+            for cell_id_str in selected_cell_ids:
+                cell_id = int(cell_id_str)
+                cell = ExhibitionCell.query.get(cell_id)
+                if cell and cell.floor.exhibition_id == exhibition.id:
+                    # 使用多對多關聯
+                    media_record.cells.append(cell)
+            db.session.commit()
+            flash(_("檔案已成功上傳並關聯到選中的區域"), "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"檔案上傳成功，但區域關聯失敗：{str(e)}", "warning")
+        
+        goto_media = request.args.get("redirect") == "media"
+        if goto_media:
+            return redirect(url_for("media_by_exhibition", exhibition_public_id=exhibition.public_id))
+        return redirect(url_for("exhibition_detail", exhibition_public_id=exhibition.public_id))
+    
+    # GET：顯示選擇頁面
+    # 預設顯示第一個樓層（或由參數指定）
+    selected_floor_code = request.args.get("floor", floors[0].floor_code if floors else None)
+    selected_floor = next((f for f in floors if f.floor_code == selected_floor_code), floors[0] if floors else None)
+    
+    if not selected_floor:
+        flash(_("找不到指定的樓層"), "error")
+        return redirect(url_for("exhibition_detail", exhibition_public_id=exhibition.public_id))
+    
+    # 載入該樓層的所有有效區域（只包含 is_active=True 的網格，依 row, col 排序）
+    _cells = [c for c in selected_floor.cells if c.is_active]
+    _cells.sort(key=lambda c: (c.row, c.col))
+    # 轉成可 JSON 序列化的 dict（供 template |tojson 使用）
+    cells = [
+        {
+            "id": c.id,
+            "cell_code": c.cell_code,
+            "row": c.row,
+            "col": c.col,
+            "name": c.name,
+            "is_active": bool(c.is_active),
+            "media_count": len(getattr(c, "media_files", []) or []),
+        }
+        for c in _cells
+    ]
+    
+    return render_template(
+        "upload_grid_selection.html",
+        exhibition=exhibition,
+        floors=floors,
+        selected_floor=selected_floor,
+        cells=cells,
     )
 
 
