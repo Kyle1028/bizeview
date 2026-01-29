@@ -189,20 +189,24 @@
         }
         
         .exhibition-meta {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
             margin-top: 15px;
             padding-top: 15px;
             border-top: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column; /* 讓狀態與按鈕區分兩行，避免英文長字擠壓跑版 */
+            gap: 10px;
+            align-items: stretch;
         }
         
         .exhibition-status {
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
             padding: 4px 12px;
             border-radius: 12px;
             font-size: 12px;
             font-weight: 600;
+            width: fit-content; /* 不要撐滿整行 */
+            max-width: 100%;
         }
         
         .status-published {
@@ -216,8 +220,14 @@
         }
         
         .exhibition-actions {
-            display: flex;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr); /* Edit / Floor Management / Delete 永遠對齊 */
             gap: 10px;
+            align-items: stretch;
+        }
+
+        .exhibition-actions form {
+            margin: 0;
         }
         
         .btn {
@@ -229,6 +239,15 @@
             font-weight: 600;
             text-decoration: none;
             transition: all 0.3s;
+            width: 100%;
+            text-align: center;
+            white-space: nowrap; /* 讓英文按鈕維持單行 */
+        }
+
+        /* 較長文字的按鈕（例如 Floor Management） */
+        .btn-long {
+            padding: 8px 10px;
+            font-size: 11px;
         }
         
         .btn-edit {
@@ -338,7 +357,7 @@
             }
             
             .exhibition-actions {
-                flex-direction: column;
+                grid-template-columns: 1fr;
                 gap: 8px;
             }
             
@@ -439,6 +458,7 @@
                                 </span>
                                 <div class="exhibition-actions">
                                     <a href="{{ url_for('admin.edit_exhibition', exhibition_public_id=exhibition.public_id) }}" class="btn btn-edit">{{ _('編輯') }}</a>
+                                    <a href="{{ url_for('admin.floors_management', exhibition_public_id=exhibition.public_id) }}" class="btn btn-edit btn-long">{{ _('樓層管理') }}</a>
                                     <form method="POST" action="{{ url_for('admin.delete_exhibition', exhibition_public_id=exhibition.public_id) }}" style="display: inline;" onsubmit="return confirm('{{ _('確定要刪除此展覽嗎？') }}');">
                                         <button type="submit" class="btn btn-delete">{{ _('刪除') }}</button>
                                     </form>

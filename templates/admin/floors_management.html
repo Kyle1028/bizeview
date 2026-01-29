@@ -225,6 +225,94 @@
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+
+        /* 手機版響應式 */
+        @media (max-width: 768px) {
+            .navbar {
+                padding: 10px 12px !important;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .navbar-brand img {
+                height: 32px !important;
+            }
+
+            .navbar-user {
+                gap: 8px !important;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+            }
+
+            .user-email {
+                font-size: 12px !important;
+                max-width: 140px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .container {
+                padding: 90px 10px 20px 10px;
+            }
+
+            .page-header {
+                padding: 18px;
+                border-radius: 12px;
+            }
+
+            .page-header h1 {
+                font-size: 20px;
+            }
+
+            .page-header .breadcrumb {
+                font-size: 12px;
+                line-height: 1.4;
+                word-break: break-word;
+            }
+
+            .floors-grid {
+                grid-template-columns: 1fr;
+                gap: 14px;
+            }
+
+            .floor-card {
+                padding: 18px;
+                border-radius: 12px;
+            }
+
+            .floor-code {
+                font-size: 20px;
+            }
+
+            .floor-actions {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                text-align: center;
+            }
+
+            .empty-state {
+                padding: 40px 18px;
+                border-radius: 12px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .navbar {
+                padding: 8px 10px !important;
+            }
+
+            .user-email {
+                display: none !important;
+            }
+
+            .container {
+                padding: 80px 8px 16px 8px;
+            }
+        }
     </style>
 </head>
 <body>

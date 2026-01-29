@@ -741,3 +741,21 @@ msgstr "Download"
 
 msgid "點擊「上傳新檔案」開始上傳照片或影片"
 msgstr "Click \"Upload New File\" to start uploading photos or videos"
+
+msgid "樓層平面圖區域預覽"
+msgstr "Floor Plan Area Preview"
+
+msgid "可直接點擊格子切換「啟用/停用」，並會同步更新下方表格。"
+msgstr "Click a cell to toggle Enable/Disable, and the table below will be updated accordingly."
+
+msgid "您沒有權限管理此展覽"
+msgstr "You do not have permission to manage this exhibition"
+
+msgid "找不到該樓層"
+msgstr "Floor not found"
+
+msgid "區域更新成功"
+msgstr "Areas updated successfully"
+
+msgid "更新失敗：%(error)s"
+msgstr "Update failed: %(error)s"

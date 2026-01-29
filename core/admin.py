@@ -7,6 +7,7 @@ from datetime import datetime, date
 import json
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
+from flask_babel import gettext as _
 from pathlib import Path
 from werkzeug.utils import secure_filename
 
@@ -648,7 +649,7 @@ def floors_management(exhibition_public_id):
     
     # 再次確認權限
     if not current_user.can_manage_exhibition(exhibition):
-        abort(403, "您沒有權限管理此展覽")
+        abort(403, _("您沒有權限管理此展覽"))
     
     floors = list(exhibition.floors)
     floors.sort(key=lambda f: f.floor_code)  # 依 F001, F002... 排序
@@ -672,7 +673,7 @@ def cells_management(exhibition_public_id, floor_code):
     
     floor = next((f for f in exhibition.floors if f.floor_code == floor_code), None)
     if not floor:
-        abort(404, "找不到該樓層")
+        abort(404, _("找不到該樓層"))
     
     if request.method == "POST":
         # 批量更新區域名稱與啟用狀態
@@ -703,15 +704,26 @@ def cells_management(exhibition_public_id, floor_code):
                 cell = ExhibitionCell.query.get(cell_id)
                 if cell and cell.floor_id == floor.id:
                     if "name" in updates:
-                        cell.name = updates["name"]
+                        # 若是「預設區域名稱」，不因語言不同而把資料寫成中英混雜
+                        # - 中文模式可能是「區域 C000001」
+                        # - 英文模式可能是「Area C000001」
+                        normalized = updates["name"]
+                        try:
+                            default_zh = f"區域 {cell.cell_code}"
+                            default_en = f"Area {cell.cell_code}"
+                            if normalized in (default_zh, default_en):
+                                normalized = default_zh
+                        except Exception:
+                            pass
+                        cell.name = normalized
                     if "is_active" in updates:
                         cell.is_active = updates["is_active"]
             
             db.session.commit()
-            flash("區域更新成功", "success")
+            flash(_("區域更新成功"), "success")
         except Exception as e:
             db.session.rollback()
-            flash(f"更新失敗：{str(e)}", "error")
+            flash((_("更新失敗：%(error)s") % {"error": str(e)}), "error")
         
         return redirect(url_for("admin.cells_management", exhibition_public_id=exhibition.public_id, floor_code=floor_code))
     

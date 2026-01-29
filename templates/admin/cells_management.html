@@ -250,6 +250,186 @@
             color: #667eea;
             font-weight: 600;
         }
+
+        /* 平面圖 + 網格預覽 */
+        .floorplan-preview-section {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            margin-bottom: 25px;
+        }
+
+        .floorplan-preview-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+        }
+
+        .floorplan-preview-container {
+            position: relative;
+            background: #f8f9fa;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: auto;
+            max-height: 420px;
+        }
+
+        .floorplan-stage {
+            position: relative;
+            transform-origin: 0 0;
+        }
+
+        .floorplan-stage img {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+
+        .floorplan-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: auto;
+        }
+
+        .cell-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: auto;
+        }
+
+        .cell-box {
+            fill: rgba(102, 126, 234, 0.16);
+            stroke: rgba(102, 126, 234, 0.45);
+            stroke-width: 1;
+            cursor: pointer;
+        }
+
+        .cell-box.inactive {
+            fill: rgba(149, 165, 166, 0.12);
+            stroke: rgba(149, 165, 166, 0.6);
+        }
+
+        .cell-box.has-media {
+            fill: rgba(46, 204, 113, 0.28);
+            stroke: rgba(46, 204, 113, 0.7);
+        }
+
+        .cell-box:hover {
+            stroke: #667eea;
+            stroke-width: 2;
+        }
+
+        .preview-help-text {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        /* 手機版響應式 */
+        @media (max-width: 768px) {
+            .navbar {
+                padding: 10px 12px !important;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .navbar-brand img {
+                height: 32px !important;
+            }
+
+            .navbar-user {
+                gap: 8px !important;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+            }
+
+            .user-email {
+                font-size: 12px !important;
+                max-width: 140px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .container {
+                padding: 90px 10px 20px 10px;
+            }
+
+            .page-header {
+                padding: 18px;
+                border-radius: 12px;
+            }
+
+            .page-header h1 {
+                font-size: 20px;
+            }
+
+            .page-header .breadcrumb {
+                font-size: 12px;
+                line-height: 1.4;
+                word-break: break-word;
+            }
+
+            .page-header .floor-info {
+                font-size: 12px;
+                line-height: 1.5;
+                word-break: break-word;
+            }
+
+            .floorplan-preview-section {
+                padding: 16px;
+                border-radius: 12px;
+            }
+
+            .floorplan-preview-title {
+                font-size: 16px;
+            }
+
+            .floorplan-preview-container {
+                max-height: 320px;
+            }
+
+            .cells-table-container {
+                padding: 16px;
+                border-radius: 12px;
+            }
+
+            .cells-table {
+                min-width: 720px; /* 表格在手機用橫向捲動 */
+            }
+
+            .form-actions {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .btn {
+                width: 100%;
+                text-align: center;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .navbar {
+                padding: 8px 10px !important;
+            }
+
+            .user-email {
+                display: none !important;
+            }
+
+            .container {
+                padding: 80px 8px 16px 8px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -300,6 +480,30 @@
             {% endif %}
         {% endwith %}
 
+        <!-- 平面圖 + 網格預覽（僅供視覺參考） -->
+        <div class="floorplan-preview-section">
+            <div class="floorplan-preview-title">
+                {{ _('樓層平面圖區域預覽') }}（{{ floor.floor_code }}）
+            </div>
+            <div class="floorplan-preview-container" id="floorplanContainer">
+                <div id="floorplanStage" class="floorplan-stage">
+                    <img
+                        id="floorplanImage"
+                        src="{{ url_for('exhibition_floor_image', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}"
+                        alt="{{ floor.floor_code }}"
+                        onload="renderPreviewGrid()"
+                        onerror="console.error('Failed to load floor plan image');"
+                    >
+                    <div class="floorplan-overlay">
+                        <svg class="cell-grid" id="cellGrid"></svg>
+                    </div>
+                </div>
+            </div>
+            <p class="preview-help-text">
+                {{ _('可直接點擊格子切換「啟用/停用」，並會同步更新下方表格。') }}
+            </p>
+        </div>
+
         <form method="POST" action="{{ url_for('admin.cells_management', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}">
             <div class="cells-table-container">
                 <table class="cells-table">
@@ -320,7 +524,7 @@
                                 <td>
                                     <input type="text" 
                                            name="cell_name_{{ cell.id }}" 
-                                           value="{{ cell.name or '' }}" 
+                                           value="{{ (cell.name or '').replace('區域', _('區域')) }}" 
                                            class="cell-name-input"
                                            placeholder="{{ _('區域名稱（可選）') }}">
                                 </td>
@@ -349,5 +553,136 @@
             </div>
         </form>
     </div>
+
+    <script>
+        // 將後端的 cells 轉成前端可用的陣列
+        const cellsData = [
+        {% for cell in cells %}
+            {
+                id: {{ cell.id }},
+                cell_code: "{{ cell.cell_code }}",
+                row: {{ cell.row }},
+                col: {{ cell.col }},
+                is_active: {{ 'true' if cell.is_active else 'false' }},
+                media_count: {{ cell.media_count or 0 }}
+            }{% if not loop.last %},{% endif %}
+        {% endfor %}
+        ];
+
+        const floorData = {
+            width: {{ floor.width_meters or 0 }},
+            height: {{ floor.height_meters or 0 }},
+            gridSize: {{ floor.grid_size or 1 }}
+        };
+
+        function renderPreviewGrid() {
+            const img = document.getElementById('floorplanImage');
+            const svg = document.getElementById('cellGrid');
+            if (!img || !svg) return;
+
+            // 確保圖片已載入完成
+            if (!img.complete || img.naturalWidth === 0) {
+                return;
+            }
+
+            const displayWidth = Math.round(img.offsetWidth);
+            const displayHeight = Math.round(img.offsetHeight);
+            if (!displayWidth || !displayHeight) return;
+
+            svg.setAttribute('viewBox', `0 0 ${displayWidth} ${displayHeight}`);
+            svg.setAttribute('width', displayWidth);
+            svg.setAttribute('height', displayHeight);
+            svg.innerHTML = '';
+
+            const totalCols = Math.floor(floorData.width / floorData.gridSize) || 1;
+            const totalRows = Math.floor(floorData.height / floorData.gridSize) || 1;
+            const cellWidth = displayWidth / totalCols;
+            const cellHeight = displayHeight / totalRows;
+
+            cellsData.forEach(cell => {
+                const x = cell.col * cellWidth;
+                const y = cell.row * cellHeight;
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', x);
+                rect.setAttribute('y', y);
+                rect.setAttribute('width', cellWidth);
+                rect.setAttribute('height', cellHeight);
+                rect.setAttribute('data-cell-id', String(cell.id));
+
+                let cls = 'cell-box';
+                if (!cell.is_active) {
+                    cls += ' inactive';
+                }
+                if (cell.media_count > 0) {
+                    cls += ' has-media';
+                }
+                rect.setAttribute('class', cls);
+
+                // tooltip
+                const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                title.textContent = `${cell.cell_code} (${cell.row}, ${cell.col})`;
+                rect.appendChild(title);
+
+                // 點擊切換啟用/停用，並同步表格 checkbox
+                rect.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleCellActive(cell.id);
+                });
+
+                svg.appendChild(rect);
+            });
+        }
+
+        function toggleCellActive(cellId) {
+            // 1) 更新記憶體資料
+            const cell = cellsData.find(c => c.id === cellId);
+            if (!cell) return;
+            cell.is_active = !cell.is_active;
+
+            // 2) 同步表格 checkbox
+            const checkbox = document.querySelector(`input[name="cell_active_${cellId}"]`);
+            if (checkbox) {
+                checkbox.checked = !!cell.is_active;
+                // 讓 checkbox 觸發 change，若未來要掛其他行為也能跟上
+                checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            // 3) 同步表格列樣式（inactive 灰掉）
+            const rowInput = document.querySelector(`input[name="cell_name_${cellId}"]`);
+            const tr = rowInput ? rowInput.closest('tr') : null;
+            if (tr) {
+                if (cell.is_active) tr.classList.remove('cell-inactive');
+                else tr.classList.add('cell-inactive');
+            }
+
+            // 4) 更新 SVG 方塊樣式
+            const rect = document.querySelector(`#cellGrid rect[data-cell-id="${cellId}"]`);
+            if (rect) {
+                rect.classList.toggle('inactive', !cell.is_active);
+            }
+        }
+
+        // 若使用者在表格勾選/取消，也同步回圖上的格子
+        (function bindTableToPreview() {
+            cellsData.forEach(cell => {
+                const checkbox = document.querySelector(`input[name="cell_active_${cell.id}"]`);
+                if (!checkbox) return;
+                checkbox.addEventListener('change', function () {
+                    cell.is_active = !!checkbox.checked;
+                    const rect = document.querySelector(`#cellGrid rect[data-cell-id="${cell.id}"]`);
+                    if (rect) rect.classList.toggle('inactive', !cell.is_active);
+                });
+            });
+        })();
+
+        window.addEventListener('resize', function () {
+            try {
+                renderPreviewGrid();
+            } catch (e) {
+                console.error(e);
+            }
+        });
+    </script>
 </body>
 </html>
