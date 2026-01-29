@@ -400,17 +400,17 @@
                         <div>
                             <label for="floor_width_f001">{{ _('實際寬度（公尺）') }}</label>
                             <input type="number" id="floor_width_f001" name="floor_width_f001" min="0" step="0.01"
-                                   value="">
+                                   value="{% if exhibition and exhibition.floors %}{% for floor in exhibition.floors %}{% if floor.floor_code == 'F001' %}{{ floor.width_meters or '' }}{% endif %}{% endfor %}{% endif %}">
                         </div>
                         <div>
                             <label for="floor_height_f001">{{ _('實際高度（公尺）') }}</label>
                             <input type="number" id="floor_height_f001" name="floor_height_f001" min="0" step="0.01"
-                                   value="">
+                                   value="{% if exhibition and exhibition.floors %}{% for floor in exhibition.floors %}{% if floor.floor_code == 'F001' %}{{ floor.height_meters or '' }}{% endif %}{% endfor %}{% endif %}">
                         </div>
                         <div>
                             <label for="floor_grid_f001">{{ _('網格大小（公尺，預設 1）') }}</label>
                             <input type="number" id="floor_grid_f001" name="floor_grid_f001" min="0.1" step="0.1"
-                                   value="1">
+                                   value="{% if exhibition and exhibition.floors %}{% for floor in exhibition.floors %}{% if floor.floor_code == 'F001' %}{{ floor.grid_size or 1 }}{% endif %}{% endfor %}{% else %}1{% endif %}">
                         </div>
                     </div>
                     {% if exhibition and exhibition.floors %}
@@ -420,6 +420,24 @@
                                 <span style="margin-right: 8px;">{{ floor.floor_code }}</span>
                             {% endfor %}
                         </div>
+                        {% if mode == 'edit' %}
+                        <div style="margin-top: 10px;">
+                            <label for="selectionFloor" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">
+                                {{ _('選擇要圈選範圍的樓層') }}
+                            </label>
+                            <select id="selectionFloor" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px;">
+                                {% for floor in exhibition.floors %}
+                                    <option value="{{ floor.floor_code }}" {% if loop.first %}selected{% endif %}>
+                                        {{ floor.floor_code }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            <div class="help-text" style="margin-top: 4px;">
+                                {{ _('選擇樓層後，下方圈選工具會載入該樓層的平面圖與網格設定') }}
+                            </div>
+                        </div>
+                        <input type="hidden" id="selectionFloorCode" name="selection_floor_code" value="{{ (exhibition.floors|first).floor_code }}">
+                        {% endif %}
                     {% endif %}
                     
                     <!-- 圈選展覽範圍工具 -->
@@ -514,69 +532,104 @@
             let isDrawingRect = false; // 是否正在繪製矩形
             let selectedAreas = []; // 已完成的選擇區域列表 [{type: 'rect'|'polygon', points: [...]}, ...]
             let gridData = null; // { cols, rows, cellWidth, cellHeight }
-            
-            // 如果是編輯模式且有現有的樓層數據，加載平面圖
+            const selectionFloorSelect = document.getElementById('selectionFloor');
+            const selectionFloorHidden = document.getElementById('selectionFloorCode');
+            let currentSelectionFloorMeta = null; // 目前圈選使用的樓層尺寸資訊（不影響表單欄位）
+
+            // 後端提供的樓層資料（代碼 / 尺寸 / 網格 / 圖片 URL）
+            const floorsData = [
             {% if exhibition and exhibition.floors %}
                 {% for floor in exhibition.floors %}
-                    {% if floor.floor_code == 'F001' %}
-                        (function() {
-                            const img = new Image();
-                            img.onload = function() {
-                                floorplanImage = img;
-                                
-                                // 等待下一帧，確保容器尺寸已計算
-                                requestAnimationFrame(function() {
-                                    // 獲取容器尺寸
-                                    const container = canvas.parentElement;
-                                    const containerRect = container.getBoundingClientRect();
-                                    const containerWidth = Math.max(containerRect.width - 20, 800); // 最小寬度 800px
-                                    const containerHeight = Math.max(window.innerHeight * 0.6, 600); // 最小高度 600px
-                                    
-                                    // 計算適合的顯示尺寸，確保圖片完整顯示且不被裁剪
-                                    const scaleX = containerWidth / img.width;
-                                    const scaleY = containerHeight / img.height;
-                                    const scale = Math.min(scaleX, scaleY); // 選擇較小的縮放比例，確保完整顯示
-                                    
-                                    // Canvas 內部尺寸 = 顯示尺寸（這樣座標轉換就簡單了）
-                                    const displayWidth = Math.round(img.width * scale);
-                                    const displayHeight = Math.round(img.height * scale);
-                                    
-                                    canvas.width = displayWidth;
-                                    canvas.height = displayHeight;
-                                    canvas.style.width = displayWidth + 'px';
-                                    canvas.style.height = displayHeight + 'px';
-                                    
-                                    // 保存縮放比例，用於後續計算
-                                    canvas.dataset.scale = scale;
-                                    canvas.dataset.originalWidth = img.width;
-                                    canvas.dataset.originalHeight = img.height;
-                                    
-                                    ctx = canvas.getContext('2d');
-                                    
-                                    // 繪製圖片（縮放到顯示尺寸）
-                                    ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
-                                    
-                                    // 設置現有的寬高和網格大小
-                                    {% if floor.width_meters %}
-                                        floorWidthInput.value = {{ floor.width_meters }};
-                                    {% endif %}
-                                    {% if floor.height_meters %}
-                                        floorHeightInput.value = {{ floor.height_meters }};
-                                    {% endif %}
-                                    {% if floor.grid_size %}
-                                        floorGridInput.value = {{ floor.grid_size }};
-                                    {% endif %}
-                                    
-                                    // 顯示圈選區域並更新網格
-                                    areaSelectionSection.style.display = 'block';
-                                    updateGrid();
-                                });
-                            };
-                            img.src = "{{ url_for('exhibition_floor_image', exhibition_public_id=exhibition.public_id, floor_code='F001') }}";
-                        })();
-                    {% endif %}
+                {
+                    code: "{{ floor.floor_code }}",
+                    width: {{ floor.width_meters or 0 }},
+                    height: {{ floor.height_meters or 0 }},
+                    gridSize: {{ floor.grid_size or 1 }},
+                    imageUrl: "{{ url_for('exhibition_floor_image', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}"
+                }{% if not loop.last %},{% endif %}
                 {% endfor %}
             {% endif %}
+            ];
+
+            function loadFloorForSelection(code) {
+                const data = floorsData.find(f => f.code === code);
+                if (!data) return;
+
+                if (selectionFloorHidden) {
+                    selectionFloorHidden.value = data.code;
+                }
+
+                // 只給圈選顯示用，真正的樓層尺寸還是以後端 DB 為準
+                currentSelectionFloorMeta = {
+                    width: data.width || 0,
+                    height: data.height || 0,
+                    gridSize: data.gridSize || 1
+                };
+
+                const img = new Image();
+                img.onload = function() {
+                    floorplanImage = img;
+
+                    // 等待下一幀，確保容器尺寸已計算
+                    requestAnimationFrame(function() {
+                        const container = canvas.parentElement;
+                        const containerRect = container.getBoundingClientRect();
+                        const containerWidth = Math.max(containerRect.width - 20, 800); // 最小寬度 800px
+                        const containerHeight = Math.max(window.innerHeight * 0.6, 600); // 最小高度 600px
+
+                        const scaleX = containerWidth / img.width;
+                        const scaleY = containerHeight / img.height;
+                        const scale = Math.min(scaleX, scaleY);
+
+                        const displayWidth = Math.round(img.width * scale);
+                        const displayHeight = Math.round(img.height * scale);
+
+                        canvas.width = displayWidth;
+                        canvas.height = displayHeight;
+                        canvas.style.width = displayWidth + 'px';
+                        canvas.style.height = displayHeight + 'px';
+
+                        canvas.dataset.scale = scale;
+                        canvas.dataset.originalWidth = img.width;
+                        canvas.dataset.originalHeight = img.height;
+
+                        ctx = canvas.getContext('2d');
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
+
+                        // 重置圈選狀態（換樓層時重新圈）
+                        selectedAreas = [];
+                        polygonPoints = [];
+                        rectStartPoint = null;
+                        rectEndPoint = null;
+                        isDrawingRect = false;
+                        selectionPolygonInput.value = '';
+                        selectionStatus.textContent = '';
+                        selectedAreasTags.innerHTML = '';
+                        selectedAreasList.style.display = 'none';
+                        finishAllBtn.style.display = 'none';
+
+                        areaSelectionSection.style.display = 'block';
+                        updateGrid();
+                    });
+                };
+                img.onerror = function() {
+                    console.error('Failed to load floor plan image for', code);
+                };
+                img.src = data.imageUrl;
+            }
+
+            // 編輯模式初始化：有樓層就載入選取的那一層
+            if (floorsData.length > 0 && selectionFloorHidden) {
+                const initialCode = selectionFloorHidden.value || floorsData[0].code;
+                if (selectionFloorSelect) {
+                    selectionFloorSelect.value = initialCode;
+                    selectionFloorSelect.addEventListener('change', function() {
+                        loadFloorForSelection(this.value);
+                    });
+                }
+                loadFloorForSelection(initialCode);
+            }
             
             // 當平面圖上傳時，顯示預覽和圈選工具
             floorImageInput.addEventListener('change', function(e) {
@@ -610,6 +663,9 @@
                                 canvas.style.width = displayWidth + 'px';
                                 canvas.style.height = displayHeight + 'px';
                                 
+                                // 這是針對「新上傳」的 F001，圈選使用當前表單欄位
+                                currentSelectionFloorMeta = null;
+                                
                                 // 保存縮放比例，用於後續計算
                                 canvas.dataset.scale = scale;
                                 canvas.dataset.originalWidth = img.width;
@@ -640,15 +696,31 @@
             
             // 當寬高或網格大小改變時，更新網格
             [floorWidthInput, floorHeightInput, floorGridInput].forEach(input => {
-                input.addEventListener('input', updateGrid);
+                input.addEventListener('input', function () {
+                    // 針對「新上傳 / 新設定」的 F001，直接用表單欄位計算網格
+                    currentSelectionFloorMeta = null;
+                    updateGrid();
+                });
             });
             
             function updateGrid() {
                 if (!ctx || !floorplanImage) return;
                 
-                const width = parseFloat(floorWidthInput.value) || 0;
-                const height = parseFloat(floorHeightInput.value) || 0;
-                const gridSize = parseFloat(floorGridInput.value) || 1;
+                let width = 0;
+                let height = 0;
+                let gridSize = 1;
+
+                // 若有選定樓層（編輯現有樓層時），以該樓層 DB 中的尺寸為主
+                if (currentSelectionFloorMeta) {
+                    width = currentSelectionFloorMeta.width || 0;
+                    height = currentSelectionFloorMeta.height || 0;
+                    gridSize = currentSelectionFloorMeta.gridSize || 1;
+                } else {
+                    // 建立新展覽 / 新上傳 F001 時，使用表單輸入的值
+                    width = parseFloat(floorWidthInput.value) || 0;
+                    height = parseFloat(floorHeightInput.value) || 0;
+                    gridSize = parseFloat(floorGridInput.value) || 1;
+                }
                 
                 if (width > 0 && height > 0 && gridSize > 0) {
                     // 計算網格數量

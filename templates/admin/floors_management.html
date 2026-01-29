@@ -101,6 +101,21 @@
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
             margin-bottom: 30px;
         }
+
+        .header-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
         
         .page-header h1 {
             color: #333;
@@ -261,6 +276,15 @@
                 border-radius: 12px;
             }
 
+            .header-top {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .header-actions {
+                justify-content: flex-start;
+            }
+
             .page-header h1 {
                 font-size: 20px;
             }
@@ -337,7 +361,14 @@
 
     <div class="container">
         <div class="page-header">
-            <h1>{{ _('樓層管理') }}</h1>
+            <div class="header-top">
+                <h1>{{ _('樓層管理') }}</h1>
+                <div class="header-actions">
+                    <a href="{{ url_for('admin.create_floor', exhibition_public_id=exhibition.public_id) }}" class="btn btn-primary">
+                        + {{ _('新增樓層') }}
+                    </a>
+                </div>
+            </div>
             <div class="breadcrumb">
                 <a href="{{ url_for('admin.exhibitions_list') }}">{{ _('展覽列表') }}</a> > 
                 <a href="{{ url_for('admin.edit_exhibition', exhibition_public_id=exhibition.public_id) }}">{{ exhibition.title }}</a> > 

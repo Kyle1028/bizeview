@@ -759,3 +759,45 @@ msgstr "Areas updated successfully"
 
 msgid "更新失敗：%(error)s"
 msgstr "Update failed: %(error)s"
+
+msgid "新增樓層"
+msgstr "Add Floor"
+
+msgid "樓層代碼格式不正確（例如 F001）"
+msgstr "Invalid floor code format (e.g., F001)"
+
+msgid "此樓層代碼已存在"
+msgstr "This floor code already exists"
+
+msgid "請上傳樓層平面圖"
+msgstr "Please upload a floor plan image"
+
+msgid "請輸入正確的尺寸（公尺）"
+msgstr "Please enter valid dimensions (meters)"
+
+msgid "寬度與高度必須大於 0"
+msgstr "Width and height must be greater than 0"
+
+msgid "樓層新增成功"
+msgstr "Floor added successfully"
+
+msgid "新增樓層失敗：%(error)s"
+msgstr "Failed to add floor: %(error)s"
+
+msgid "格式：F001、F002...（預設為下一層）"
+msgstr "Format: F001, F002... (defaults to the next floor)"
+
+msgid "樓層代碼"
+msgstr "Floor Code"
+
+msgid "請在編輯展覽時上傳樓層平面圖並設定尺寸"
+msgstr "Please upload the floor plan and set dimensions when editing the exhibition"
+
+msgid "建立"
+msgstr "Create"
+
+msgid "選擇要圈選範圍的樓層"
+msgstr "Select the floor to define active area"
+
+msgid "選擇樓層後，下方圈選工具會載入該樓層的平面圖與網格設定"
+msgstr "After selecting a floor, the selection tool below will load its floor plan and grid settings"

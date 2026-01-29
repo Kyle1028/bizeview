@@ -5,6 +5,7 @@
 
 from datetime import datetime, date
 import json
+import re
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
 from flask_babel import gettext as _
@@ -171,6 +172,40 @@ def _apply_selection_polygon(floor: ExhibitionFloor, polygon_data) -> None:
                 break
         
         cell.is_active = is_inside
+
+
+def _get_exhibition_dir(exhibition: Exhibition) -> Path:
+    """
+    取得該展覽的實體資料夾（用於封面/樓層檔案存放）。
+    - 若已有 cover_image，沿用其資料夾
+    - 否則以 title 產生安全目錄名稱
+    """
+    if exhibition.cover_image:
+        p = BASE_DIR / exhibition.cover_image
+        return p.parent
+    safe_title = "".join(c for c in (exhibition.title or "") if c.isalnum() or c in (" ", "-", "_")).strip()
+    safe_title = safe_title.replace(" ", "_")[:50] or f"exhibition_{exhibition.id}"
+    return EXHIBITION_DIR / safe_title
+
+
+def _suggest_next_floor_code(exhibition: Exhibition) -> str:
+    """
+    根據既有樓層代碼，建議下一個 F00x。
+    若找不到任何符合格式的樓層，預設回傳 F001。
+    """
+    max_n = 0
+    for f in getattr(exhibition, "floors", []) or []:
+        if not getattr(f, "floor_code", None):
+            continue
+        m = re.match(r"^F(\d{3})$", str(f.floor_code).upper())
+        if not m:
+            continue
+        try:
+            n = int(m.group(1))
+            max_n = max(max_n, n)
+        except ValueError:
+            continue
+    return f"F{max_n + 1:03d}" if max_n >= 0 else "F001"
 
 
 # ==================== 展覽管理 ====================
@@ -493,13 +528,16 @@ def edit_exhibition(exhibition_public_id):
                         return render_template("admin/exhibition_form.html", mode="edit", exhibition=exhibition)
                     elif floor:
                         updated = False
-                        if width_m and height_m:
-                            floor.width_meters = width_m
-                            floor.height_meters = height_m
-                            updated = True
-                        if grid_size and grid_size > 0:
-                            floor.grid_size = grid_size
-                            updated = True
+                        # 只有當使用者真的修改數值時，才更新並重建網格
+                        if width_m is not None and height_m is not None:
+                            if (floor.width_meters != width_m) or (floor.height_meters != height_m):
+                                floor.width_meters = width_m
+                                floor.height_meters = height_m
+                                updated = True
+                        if grid_size is not None and grid_size > 0:
+                            if floor.grid_size != grid_size:
+                                floor.grid_size = grid_size
+                                updated = True
                         if floor_file and floor_file.filename:
                             _save_floor_image(floor)
                             updated = True
@@ -507,24 +545,32 @@ def edit_exhibition(exhibition_public_id):
                         if updated:
                             db.session.flush()
                             _generate_cells_for_floor(floor)
-                            
-                            # 處理圈選區域（如果有）
-                            selection_polygon_str = request.form.get("selection_polygon", "").strip()
-                            if selection_polygon_str:
-                                try:
-                                    polygon_data = json.loads(selection_polygon_str)
-                                    if polygon_data and len(polygon_data) >= 3:
-                                        _apply_selection_polygon(floor, polygon_data)
-                                except (json.JSONDecodeError, ValueError) as e:
-                                    # 如果解析失敗，忽略錯誤，不影響展覽更新
-                                    pass
-                            
                             db.session.commit()
                 except ValueError as ve:
                     db.session.rollback()
                     flash(str(ve), "error")
                     return render_template("admin/exhibition_form.html", mode="edit", exhibition=exhibition)
-            
+
+            # 不論是否有修改樓層尺寸，只要有圈選資料，就依指定樓層套用
+            selection_floor_code = request.form.get("selection_floor_code", "").strip()
+            selection_polygon_str = request.form.get("selection_polygon", "").strip()
+            if selection_polygon_str:
+                try:
+                    polygon_data = json.loads(selection_polygon_str)
+                    if polygon_data:
+                        target_floor = None
+                        if selection_floor_code:
+                            target_floor = next((f for f in exhibition.floors if f.floor_code == selection_floor_code), None)
+                        if not target_floor:
+                            # 向後相容：沒選就預設套用到 F001
+                            target_floor = next((f for f in exhibition.floors if f.floor_code == "F001"), None)
+                        if target_floor:
+                            _apply_selection_polygon(target_floor, polygon_data)
+                            db.session.commit()
+                except (json.JSONDecodeError, ValueError):
+                    # 圈選資料不合法時忽略，不影響展覽基本資訊更新
+                    pass
+
             flash("展覽更新成功！", "success")
             return redirect(url_for("admin.exhibitions_list"))
         
@@ -655,6 +701,168 @@ def floors_management(exhibition_public_id):
     floors.sort(key=lambda f: f.floor_code)  # 依 F001, F002... 排序
     
     return render_template("admin/floors_management.html", exhibition=exhibition, floors=floors)
+
+
+@admin_bp.route("/exhibitions/<exhibition_public_id>/floors/create", methods=["GET", "POST"])
+@can_manage_exhibition('exhibition_public_id')
+def create_floor(exhibition_public_id):
+    """
+    新增樓層（對外使用 public_id）
+    GET：顯示新增樓層表單
+    POST：處理表單並新增樓層、產生 cells
+    """
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
+
+    # 再次確認權限
+    if not current_user.can_manage_exhibition(exhibition):
+        abort(403, _("您沒有權限管理此展覽"))
+
+    suggested_floor_code = _suggest_next_floor_code(exhibition)
+
+    if request.method == "POST":
+        floor_code = (request.form.get("floor_code") or "").strip().upper() or suggested_floor_code
+        width_str = (request.form.get("width_meters") or "").strip()
+        height_str = (request.form.get("height_meters") or "").strip()
+        grid_str = (request.form.get("grid_size") or "").strip()
+        floor_file = request.files.get("floor_image")
+
+        if not re.match(r"^F\d{3}$", floor_code):
+            flash(_("樓層代碼格式不正確（例如 F001）"), "error")
+            return render_template(
+                "admin/floor_form.html",
+                mode="create",
+                exhibition=exhibition,
+                suggested_floor_code=suggested_floor_code,
+                form_floor_code=floor_code,
+                form_width=width_str,
+                form_height=height_str,
+                form_grid=grid_str,
+            )
+
+        exists = ExhibitionFloor.query.filter_by(exhibition_id=exhibition.id, floor_code=floor_code).first()
+        if exists:
+            flash(_("此樓層代碼已存在"), "error")
+            return render_template(
+                "admin/floor_form.html",
+                mode="create",
+                exhibition=exhibition,
+                suggested_floor_code=suggested_floor_code,
+                form_floor_code=floor_code,
+                form_width=width_str,
+                form_height=height_str,
+                form_grid=grid_str,
+            )
+
+        if not floor_file or not floor_file.filename:
+            flash(_("請上傳樓層平面圖"), "error")
+            return render_template(
+                "admin/floor_form.html",
+                mode="create",
+                exhibition=exhibition,
+                suggested_floor_code=suggested_floor_code,
+                form_floor_code=floor_code,
+                form_width=width_str,
+                form_height=height_str,
+                form_grid=grid_str,
+            )
+
+        try:
+            width_m = float(width_str)
+            height_m = float(height_str)
+            grid_size = float(grid_str) if grid_str else 1.0
+        except ValueError:
+            flash(_("請輸入正確的尺寸（公尺）"), "error")
+            return render_template(
+                "admin/floor_form.html",
+                mode="create",
+                exhibition=exhibition,
+                suggested_floor_code=suggested_floor_code,
+                form_floor_code=floor_code,
+                form_width=width_str,
+                form_height=height_str,
+                form_grid=grid_str,
+            )
+
+        if width_m <= 0 or height_m <= 0:
+            flash(_("寬度與高度必須大於 0"), "error")
+            return render_template(
+                "admin/floor_form.html",
+                mode="create",
+                exhibition=exhibition,
+                suggested_floor_code=suggested_floor_code,
+                form_floor_code=floor_code,
+                form_width=width_str,
+                form_height=height_str,
+                form_grid=grid_str,
+            )
+
+        if grid_size <= 0:
+            grid_size = 1.0
+
+        # 儲存樓層圖片
+        filename = secure_filename(floor_file.filename)
+        ext = Path(filename).suffix.lower()
+        if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+            flash(_("樓層平面圖格式不支援，請使用 JPG、PNG 或 WEBP"), "error")
+            return render_template(
+                "admin/floor_form.html",
+                mode="create",
+                exhibition=exhibition,
+                suggested_floor_code=suggested_floor_code,
+                form_floor_code=floor_code,
+                form_width=width_str,
+                form_height=height_str,
+                form_grid=grid_str,
+            )
+
+        exhibition_dir = _get_exhibition_dir(exhibition)
+        exhibition_dir.mkdir(parents=True, exist_ok=True)
+        floor_filename = f"{floor_code}_floor{ext}"
+        floor_path = exhibition_dir / floor_filename
+        floor_file.save(floor_path)
+        floor_rel = str(floor_path.relative_to(BASE_DIR))
+
+        try:
+            floor = ExhibitionFloor(
+                exhibition_id=exhibition.id,
+                floor_code=floor_code,
+                image_path=floor_rel,
+                width_meters=width_m,
+                height_meters=height_m,
+                grid_size=grid_size,
+                created_at=datetime.now(),
+            )
+            db.session.add(floor)
+            db.session.flush()
+            _generate_cells_for_floor(floor)
+            db.session.commit()
+            flash(_("樓層新增成功"), "success")
+            return redirect(url_for("admin.floors_management", exhibition_public_id=exhibition.public_id))
+        except Exception as e:
+            db.session.rollback()
+            flash((_("新增樓層失敗：%(error)s") % {"error": str(e)}), "error")
+            return render_template(
+                "admin/floor_form.html",
+                mode="create",
+                exhibition=exhibition,
+                suggested_floor_code=suggested_floor_code,
+                form_floor_code=floor_code,
+                form_width=width_str,
+                form_height=height_str,
+                form_grid=grid_str,
+            )
+
+    # GET
+    return render_template(
+        "admin/floor_form.html",
+        mode="create",
+        exhibition=exhibition,
+        suggested_floor_code=suggested_floor_code,
+        form_floor_code=suggested_floor_code,
+        form_width="",
+        form_height="",
+        form_grid="1",
+    )
 
 
 @admin_bp.route("/exhibitions/<exhibition_public_id>/floors/<floor_code>/cells", methods=["GET", "POST"])
