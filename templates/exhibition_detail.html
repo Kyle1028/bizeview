@@ -530,11 +530,10 @@
                 {% if photo.description %}
                   <p class="photo-description">{{ photo.description }}</p>
                 {% endif %}
-                {% if photo.cell_codes %}
+                {% if photo.merged_region_names %}
                   <p class="photo-cells">
-                    {{ _('區域') }}：
-                    {% for label in photo.cell_codes %}
-                      <span class="cell-badge">{{ label }}</span>
+                    {% for name in photo.merged_region_names %}
+                      <span class="cell-badge">{{ name }}</span>
                     {% endfor %}
                   </p>
                 {% endif %}

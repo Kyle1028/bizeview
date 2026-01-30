@@ -586,9 +586,6 @@
             {% for region in merged_regions %}
             <div class="merged-region-card">
                 <span class="region-name">{{ region.name }}</span>
-                <span class="region-cells">
-                    {{ region.cell_codes_sorted|join(', ') }}
-                </span>
                 <div class="region-actions">
                     <form method="POST" action="{{ url_for('admin.cells_management', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}" style="display:inline-flex; align-items:center; gap:6px;">
                         <input type="hidden" name="merge_action" value="update">

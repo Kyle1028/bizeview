@@ -1153,10 +1153,10 @@ def exhibition_detail(exhibition_public_id):
         
         # 如果檔案存在，才加入列表
         if full_path.exists():
-            # 預設：區域資訊為空列表，避免模板存取錯誤
-            photo.cell_codes = []
+            # 卡片上只顯示合併區名稱，不顯示個別儲存格編號
+            photo.merged_region_names = []
             
-            # 嘗試找出對應的 Media 記錄，以便顯示此照片所屬的展覽區域（Cell）
+            # 嘗試找出對應的 Media 記錄，以便顯示此照片所屬的合併區名稱
             try:
                 photo_filename = full_path.name
                 linked_media = Media.query.filter(
@@ -1168,23 +1168,16 @@ def exhibition_detail(exhibition_public_id):
                     (Media.output_path == str(full_path))
                 ).first()
                 
-                # 若找到對應的 Media，整理其所有關聯的區域代碼（依樓層與 cell_code 排序）
                 if linked_media and linked_media.cells:
-                    labels = []
+                    region_names = set()
                     for cell in linked_media.cells:
-                        try:
-                            floor_code = getattr(cell.floor, "floor_code", "")
-                        except Exception:
-                            floor_code = ""
-                        # 優先顯示 F+C 組合，若無樓層代碼則只顯示 C 碼
-                        label = f"{floor_code} {cell.cell_code}".strip()
-                        labels.append(label)
-                    # 去重並排序，避免重複顯示
-                    unique_labels = sorted(set(labels))
-                    photo.cell_codes = unique_labels
+                        if cell.merged_region_id and getattr(cell, "merged_region", None):
+                            name = (cell.merged_region.name or "").strip()
+                            if name:
+                                region_names.add(name)
+                    photo.merged_region_names = sorted(region_names)
             except Exception:
-                # 若關聯查詢失敗，不影響基礎照片顯示，只是不顯示區域資訊
-                photo.cell_codes = []
+                photo.merged_region_names = []
             
             photos.append(photo)
         else:
