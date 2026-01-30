@@ -278,6 +278,11 @@ class ExhibitionFloor(db.Model):
     # 此樓層的網格大小（公尺），預設 1m×1m，可依樓層調整
     grid_size = db.Column(db.Float, default=1.0)
 
+    # OCR 辨識結果（JSON 格式）：包含文字內容和位置座標
+    # 格式：[{"text": "文字內容", "bbox": [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]}, ...]
+    # bbox 是相對於原圖的座標（左上、右上、右下、左下）
+    ocr_text_regions = db.Column(db.JSON, nullable=True)
+
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 

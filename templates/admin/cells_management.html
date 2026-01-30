@@ -428,6 +428,86 @@
             cursor: pointer;
         }
 
+        /* OCR 文字辨識結果 */
+        .ocr-text-section {
+            background: #f0f7ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .ocr-text-section h4 {
+            font-size: 15px;
+            color: #333;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ocr-text-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .ocr-text-item {
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #333;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .ocr-text-item:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        .ocr-text-item:active {
+            transform: translateY(0);
+        }
+
+        .ocr-text-empty {
+            color: #999;
+            font-size: 13px;
+            font-style: italic;
+        }
+
+        /* OCR 文字在平面圖上的標記 */
+        .ocr-text-overlay {
+            position: absolute;
+            pointer-events: none;
+        }
+
+        .ocr-text-marker {
+            position: absolute;
+            background: rgba(102, 126, 234, 0.8);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            pointer-events: auto;
+            cursor: pointer;
+            z-index: 10;
+        }
+
+        .ocr-text-marker:hover {
+            background: rgba(102, 126, 234, 1);
+            transform: scale(1.05);
+        }
+
         /* 手機版響應式 */
         @media (max-width: 768px) {
             .navbar {
@@ -602,6 +682,58 @@
             </div>
             {% endfor %}
             {% endif %}
+            
+            <!-- OCR 文字辨識結果 -->
+            {% if ocr_text_regions %}
+                {% if ocr_text_regions|length > 0 %}
+                <div class="ocr-text-section">
+                    <h4>
+                        <span>🔍</span>
+                        <span>{{ _('OCR 辨識到的文字') }}（{{ ocr_text_regions|length }} {{ _('個') }}）</span>
+                    </h4>
+                    <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                        {{ _('點擊下方文字可自動填入區域名稱欄位') }}
+                    </p>
+                    <div class="ocr-text-list">
+                        {% for ocr_item in ocr_text_regions %}
+                        <div class="ocr-text-item" 
+                             data-ocr-text="{{ ocr_item.text|e }}"
+                             onclick="fillMergeRegionName('{{ ocr_item.text|replace("'", "\\'")|replace('"', '\\"') }}')"
+                             title="{{ _('點擊填入區域名稱') }}">
+                            {{ ocr_item.text }}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% else %}
+                <div class="ocr-text-section" style="background: #fff3cd; border-color: #ffc107;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                        <p style="font-size: 13px; color: #856404; margin: 0;">
+                            {{ _('OCR 辨識結果為空（平面圖上可能沒有文字，或辨識失敗）') }}
+                        </p>
+                        <form method="POST" action="{{ url_for('admin.re_ocr_floor', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}" style="display: inline;">
+                            <button type="submit" class="btn-small" style="background:#ffc107;color:#856404; padding:6px 12px; font-size:12px;">
+                                🔍 {{ _('重新辨識') }}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+            {% else %}
+            <div class="ocr-text-section" style="background: #f8f9fa; border-color: #dee2e6;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                    <p style="font-size: 13px; color: #6c757d; margin: 0;">
+                        {{ _('尚未進行 OCR 辨識') }}
+                    </p>
+                    <form method="POST" action="{{ url_for('admin.re_ocr_floor', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}" style="display: inline;">
+                        <button type="submit" class="btn-small" style="background:#667eea;color:white; padding:6px 12px; font-size:12px;">
+                            🔍 {{ _('重新辨識 OCR') }}
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+            
             <form id="merge-form" method="POST" action="{{ url_for('admin.cells_management', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}">
                 <input type="hidden" name="merge_action" value="create">
                 <div id="merge_cell_ids_container"></div>
@@ -636,6 +768,7 @@
                     >
                     <div class="floorplan-overlay">
                         <svg class="cell-grid" id="cellGrid"></svg>
+                        <div class="ocr-text-overlay" id="ocrTextOverlay"></div>
                     </div>
                 </div>
             </div>
@@ -726,11 +859,30 @@
         ];
 
         const mergedRegionsForPlan = {{ merged_regions_for_plan | tojson }};
+        const ocrTextRegions = {{ ocr_text_regions | tojson if ocr_text_regions else '[]' }};
         const floorData = {
             width: {{ floor.width_meters or 0 }},
             height: {{ floor.height_meters or 0 }},
             gridSize: {{ floor.grid_size or 1 }}
         };
+
+        // 調試：在控制台輸出 OCR 結果
+        console.log('OCR Text Regions:', ocrTextRegions);
+        console.log('OCR Regions count:', ocrTextRegions ? ocrTextRegions.length : 0);
+
+        // OCR 文字填入功能
+        function fillMergeRegionName(text) {
+            const nameInput = document.getElementById('merge_region_name');
+            if (nameInput) {
+                nameInput.value = text;
+                nameInput.focus();
+                // 視覺反饋
+                nameInput.style.background = '#fff9c4';
+                setTimeout(() => {
+                    nameInput.style.background = '';
+                }, 1000);
+            }
+        }
 
         // 平面圖模式：'active' = 圈選有效區域，'merge' = 選擇要合併的儲存格
         let planMode = 'active';
@@ -909,6 +1061,56 @@
                     svg.appendChild(text);
                 });
             }
+
+            // 顯示 OCR 文字標記
+            renderOCRTextMarkers();
+        }
+
+        function renderOCRTextMarkers() {
+            const overlay = document.getElementById('ocrTextOverlay');
+            if (!overlay || !ocrTextRegions || ocrTextRegions.length === 0) return;
+
+            const img = document.getElementById('floorplanImage');
+            if (!img || !img.complete || img.naturalWidth === 0) return;
+
+            const displayWidth = Math.round(img.offsetWidth);
+            const displayHeight = Math.round(img.offsetHeight);
+            if (!displayWidth || !displayHeight) return;
+
+            overlay.style.width = displayWidth + 'px';
+            overlay.style.height = displayHeight + 'px';
+            overlay.innerHTML = '';
+
+            const scaleX = displayWidth / img.naturalWidth;
+            const scaleY = displayHeight / img.naturalHeight;
+
+            ocrTextRegions.forEach((ocrItem, index) => {
+                if (!ocrItem.bbox || ocrItem.bbox.length < 4) return;
+
+                // 計算文字區域的中心點和邊界框
+                const bbox = ocrItem.bbox;
+                const xs = bbox.map(p => p[0] * scaleX);
+                const ys = bbox.map(p => p[1] * scaleY);
+                const minX = Math.min(...xs);
+                const maxX = Math.max(...xs);
+                const minY = Math.min(...ys);
+                const maxY = Math.max(...ys);
+                const centerX = (minX + maxX) / 2;
+                const centerY = (minY + maxY) / 2;
+
+                const marker = document.createElement('div');
+                marker.className = 'ocr-text-marker';
+                marker.textContent = ocrItem.text || '';
+                marker.style.left = centerX + 'px';
+                marker.style.top = centerY + 'px';
+                marker.style.transform = 'translate(-50%, -50%)';
+                marker.title = "{{ _('點擊填入區域名稱') }}";
+                marker.onclick = function(e) {
+                    e.stopPropagation();
+                    fillMergeRegionName(ocrItem.text);
+                };
+                overlay.appendChild(marker);
+            });
         }
 
         function toggleCellActive(cellId) {
@@ -1019,8 +1221,21 @@
         });
 
         window.addEventListener('resize', function () {
-            try { renderPreviewGrid(); } catch (e) { console.error(e); }
+            try { 
+                renderPreviewGrid();
+                renderOCRTextMarkers();
+            } catch (e) { console.error(e); }
         });
+
+        // 圖片載入完成後也渲染 OCR 標記
+        const floorplanImg = document.getElementById('floorplanImage');
+        if (floorplanImg) {
+            floorplanImg.addEventListener('load', function() {
+                setTimeout(function() {
+                    renderOCRTextMarkers();
+                }, 100);
+            });
+        }
     </script>
 </body>
 </html>

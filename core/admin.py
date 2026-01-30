@@ -6,6 +6,7 @@
 from datetime import datetime, date
 import json
 import re
+import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
 from flask_babel import gettext as _
@@ -25,6 +26,7 @@ from core.models import (
     media_cells,
 )
 from core.decorators import admin_required, super_admin_required, can_manage_exhibition
+from core.floor_plan_ocr import floor_plan_has_text, floor_plan_text_regions
 
 # 建立管理員藍圖，所有管理員相關的路由都以 /admin 開頭
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -361,6 +363,33 @@ def create_exhibition():
                             # 如果解析失敗，忽略錯誤，不影響展覽創建
                             pass
                     
+                    # OCR 文字辨識：辨識平面圖上的文字並保存位置
+                    try:
+                        ocr_regions = floor_plan_text_regions(floor_path)
+                        if ocr_regions:
+                            # 轉換為 JSON 格式：{"text": "文字", "bbox": [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]}
+                            ocr_data = []
+                            for bbox, text in ocr_regions:
+                                # bbox 是 4 個點的座標列表，確保格式正確
+                                if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                                    # 轉換為標準格式：[[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+                                    bbox_points = []
+                                    for point in bbox[:4]:
+                                        if isinstance(point, (list, tuple)) and len(point) >= 2:
+                                            bbox_points.append([float(point[0]), float(point[1])])
+                                    if len(bbox_points) == 4:
+                                        ocr_data.append({
+                                            "text": str(text),
+                                            "bbox": bbox_points
+                                        })
+                            if ocr_data:
+                                floor.ocr_text_regions = ocr_data
+                                flash(_("平面圖已辨識到 %(count)d 個文字區塊", count=len(ocr_data)), "info")
+                    except Exception as e:
+                        # OCR 失敗不影響流程，只記錄錯誤
+                        logging.warning(f"OCR 辨識失敗: {e}")
+                        pass
+                    
                     db.session.commit()
 
             flash("展覽創建成功！", "success")
@@ -572,6 +601,18 @@ def edit_exhibition(exhibition_public_id):
                     # 圈選資料不合法時忽略，不影響展覽基本資訊更新
                     pass
 
+            # 若有上傳平面圖，偵測是否有文字並提示（不阻擋流程）
+            if floor_file and floor_file.filename:
+                f001 = next((f for f in exhibition.floors if f.floor_code == "F001"), None)
+                if f001 and getattr(f001, "image_path", None):
+                    full_path = BASE_DIR / f001.image_path
+                    if full_path.exists():
+                        try:
+                            if floor_plan_has_text(full_path):
+                                flash(_("平面圖上偵測到文字，您可在區域管理中為區塊命名或合併。"), "info")
+                        except Exception:
+                            pass
+
             flash("展覽更新成功！", "success")
             return redirect(url_for("admin.exhibitions_list"))
         
@@ -702,6 +743,118 @@ def floors_management(exhibition_public_id):
     floors.sort(key=lambda f: f.floor_code)  # 依 F001, F002... 排序
     
     return render_template("admin/floors_management.html", exhibition=exhibition, floors=floors)
+
+
+@admin_bp.route("/exhibitions/<exhibition_public_id>/floors/<floor_code>/re-ocr", methods=["POST"])
+@can_manage_exhibition('exhibition_public_id')
+def re_ocr_floor(exhibition_public_id, floor_code):
+    """
+    重新對平面圖進行 OCR 辨識
+    """
+    exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
+    
+    if not current_user.can_manage_exhibition(exhibition):
+        abort(403, _("您沒有權限管理此展覽"))
+    
+    floor = next((f for f in exhibition.floors if f.floor_code == floor_code), None)
+    if not floor:
+        abort(404, _("找不到該樓層"))
+    
+    # 構建圖片完整路徑
+    floor_path = BASE_DIR / floor.image_path
+    if not floor_path.exists():
+        flash(_("平面圖檔案不存在"), "error")
+        return redirect(url_for("admin.floors_management", exhibition_public_id=exhibition.public_id))
+    
+    try:
+        # 檢查 OCR 引擎是否可用
+        from core.floor_plan_ocr import _get_engine
+        import sys
+        engine = _get_engine()
+        if engine is None:
+            python_exe = sys.executable
+            error_msg = _(
+                "OCR 引擎未載入。\n"
+                "請確認 rapidocr_onnxruntime 已正確安裝。\n"
+                "當前 Python: %(python)s\n"
+                "請執行: %(python)s -m pip install rapidocr_onnxruntime"
+            ) % {"python": python_exe}
+            flash(error_msg, "error")
+            logging.error(f"OCR 引擎載入失敗，Python: {python_exe}")
+            return redirect(url_for("admin.cells_management", exhibition_public_id=exhibition.public_id, floor_code=floor_code))
+        
+        # 進行 OCR 辨識
+        logging.info(f"開始 OCR 辨識: {floor_path}")
+        ocr_regions = floor_plan_text_regions(floor_path)
+        logging.info(f"OCR 辨識結果數量: {len(ocr_regions) if ocr_regions else 0}")
+        
+        if ocr_regions:
+            # 轉換為 JSON 格式
+            ocr_data = []
+            for bbox, text in ocr_regions:
+                # 確保文字不為空
+                if not text or not str(text).strip():
+                    continue
+                
+                text_str = str(text).strip()
+                
+                if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                    bbox_points = []
+                    valid_bbox = True
+                    for point in bbox[:4]:
+                        if isinstance(point, (list, tuple)) and len(point) >= 2:
+                            try:
+                                bbox_points.append([float(point[0]), float(point[1])])
+                            except (ValueError, TypeError):
+                                valid_bbox = False
+                                break
+                        else:
+                            valid_bbox = False
+                            break
+                    
+                    if valid_bbox and len(bbox_points) == 4:
+                        ocr_data.append({
+                            "text": text_str,
+                            "bbox": bbox_points
+                        })
+                    else:
+                        # bbox 格式不正確，但仍然保存文字（bbox 為空列表）
+                        logging.warning(f"OCR 結果 bbox 格式不正確: {bbox}, 文字: {text_str}")
+                        ocr_data.append({
+                            "text": text_str,
+                            "bbox": []
+                        })
+                else:
+                    # bbox 為空或格式不對，仍然保存文字
+                    logging.debug(f"OCR 結果 bbox 為空或格式不對: {bbox}, 文字: {text_str}")
+                    ocr_data.append({
+                        "text": text_str,
+                        "bbox": []
+                    })
+            
+            if ocr_data:
+                floor.ocr_text_regions = ocr_data
+                db.session.commit()
+                logging.info(f"OCR 辨識成功，保存了 {len(ocr_data)} 個文字區塊")
+                flash(_("OCR 辨識完成，辨識到 %(count)d 個文字區塊", count=len(ocr_data)), "success")
+            else:
+                floor.ocr_text_regions = []
+                db.session.commit()
+                logging.warning("OCR 辨識結果為空（格式轉換後無有效數據）")
+                flash(_("OCR 辨識完成，但未辨識到有效文字（可能是格式問題）"), "warning")
+        else:
+            floor.ocr_text_regions = []
+            db.session.commit()
+            logging.info("OCR 辨識完成，但未辨識到文字")
+            flash(_("OCR 辨識完成，但未辨識到文字（平面圖上可能沒有文字，或辨識失敗）"), "info")
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_detail = traceback.format_exc()
+        logging.error(f"OCR 辨識失敗: {e}\n{error_detail}")
+        flash(_("OCR 辨識失敗：%(error)s（請檢查日誌獲取詳細信息）", error=str(e)), "error")
+    
+    return redirect(url_for("admin.cells_management", exhibition_public_id=exhibition.public_id, floor_code=floor_code))
 
 
 @admin_bp.route("/exhibitions/<exhibition_public_id>/floors/create", methods=["GET", "POST"])
@@ -836,6 +989,34 @@ def create_floor(exhibition_public_id):
             db.session.add(floor)
             db.session.flush()
             _generate_cells_for_floor(floor)
+            
+            # OCR 文字辨識：辨識平面圖上的文字並保存位置
+            try:
+                ocr_regions = floor_plan_text_regions(floor_path)
+                if ocr_regions:
+                    # 轉換為 JSON 格式：{"text": "文字", "bbox": [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]}
+                    ocr_data = []
+                    for bbox, text in ocr_regions:
+                        # bbox 是 4 個點的座標列表，確保格式正確
+                        if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                            # 轉換為標準格式：[[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+                            bbox_points = []
+                            for point in bbox[:4]:
+                                if isinstance(point, (list, tuple)) and len(point) >= 2:
+                                    bbox_points.append([float(point[0]), float(point[1])])
+                            if len(bbox_points) == 4:
+                                ocr_data.append({
+                                    "text": str(text),
+                                    "bbox": bbox_points
+                                })
+                    if ocr_data:
+                        floor.ocr_text_regions = ocr_data
+                        flash(_("平面圖已辨識到 %(count)d 個文字區塊", count=len(ocr_data)), "info")
+            except Exception as e:
+                # OCR 失敗不影響流程，只記錄錯誤
+                logging.warning(f"OCR 辨識失敗: {e}")
+                pass
+            
             db.session.commit()
             flash(_("樓層新增成功"), "success")
             return redirect(url_for("admin.floors_management", exhibition_public_id=exhibition.public_id))
@@ -1020,6 +1201,13 @@ def cells_management(exhibition_public_id, floor_code):
         for r in merged_regions
     ]
     
+    # 取得 OCR 辨識結果
+    ocr_text_regions = floor.ocr_text_regions if floor.ocr_text_regions else []
+    
+    # 調試：記錄 OCR 結果（可在瀏覽器控制台查看）
+    import logging
+    logging.info(f"Floor {floor.floor_code} OCR regions: {ocr_text_regions}")
+    
     return render_template(
         "admin/cells_management.html",
         exhibition=exhibition,
@@ -1027,6 +1215,7 @@ def cells_management(exhibition_public_id, floor_code):
         cells=cells,
         merged_regions=merged_regions,
         merged_regions_for_plan=merged_regions_for_plan,
+        ocr_text_regions=ocr_text_regions,
     )
 
 
