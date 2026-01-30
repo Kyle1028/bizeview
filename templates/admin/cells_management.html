@@ -312,6 +312,36 @@
             border-color: #e67e22;
             background: #e67e22;
         }
+        
+        .floorplan-zoom-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 6px 0 12px;
+            flex-wrap: wrap;
+        }
+
+        .floorplan-zoom-bar .zoom-btn {
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            background: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .floorplan-zoom-bar .zoom-btn:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .floorplan-zoom-label {
+            font-size: 13px;
+            color: #666;
+            min-width: 48px;
+        }
 
         .advanced-toggle {
             display: inline-block;
@@ -659,7 +689,7 @@
         <div class="merged-regions-section">
             <h3>{{ _('合併區管理') }}</h3>
             <p style="font-size: 14px; color: #666; margin-bottom: 12px;">
-                {{ _('可將多個儲存格合併為一個命名區塊，展覽頁會以區塊為單位顯示並自成一個網格。') }}
+                {{ _('可將多個網格合併為一個命名區塊，展覽頁會以區塊為單位顯示並自成一個網格。') }}
             </p>
             {% if merged_regions %}
             <p style="font-size: 13px; color: #333; margin-bottom: 10px;"><strong>{{ _('現有合併區') }}：</strong></p>
@@ -673,7 +703,7 @@
                         <input type="text" name="merge_region_new_name" value="{{ region.name }}" placeholder="{{ _('新名稱') }}" style="padding:4px 8px; font-size:13px; width:120px; border-radius:4px; border:1px solid #ddd;">
                         <button type="submit" class="btn-small" style="background:#95a5a6;color:white;">{{ _('重新命名') }}</button>
                     </form>
-                    <form method="POST" action="{{ url_for('admin.cells_management', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}" style="display:inline;" onsubmit="return confirm('{{ _('確定要解除此合併區嗎？儲存格會保留，僅取消合併。') }}');">
+                    <form method="POST" action="{{ url_for('admin.cells_management', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}" style="display:inline;" onsubmit="return confirm('{{ _('確定要解除此合併區嗎？網格會保留，僅取消合併。') }}');">
                         <input type="hidden" name="merge_action" value="delete">
                         <input type="hidden" name="merge_region_id" value="{{ region.id }}">
                         <button type="submit" class="btn-small" style="background:#e74c3c;color:white;">{{ _('解除合併') }}</button>
@@ -740,14 +770,14 @@
                 <div class="merge-create-row">
                     <label for="merge_region_name" style="font-weight:600;">{{ _('建立合併區：') }}</label>
                     <input type="text" id="merge_region_name" name="merge_region_name" placeholder="{{ _('區域名稱（例如：主展區）') }}">
-                    <button type="button" id="merge-submit-btn" class="btn-merge">{{ _('合併選取的儲存格') }}</button>
-                    <span id="merge-selection-hint" style="font-size: 13px; color: #888;">{{ _('請先切換為「選擇要合併的儲存格」，在平面圖上點選格子後再輸入區域名稱並按「合併」。') }}</span>
+                    <button type="button" id="merge-submit-btn" class="btn-merge">{{ _('合併選取的網格') }}</button>
+                    <span id="merge-selection-hint" style="font-size: 13px; color: #888;">{{ _('請先切換為「選擇要合併的網格」，在平面圖上點選格子後再輸入區域名稱並按「合併」。') }}</span>
                     <span id="merge-selected-count" style="font-size: 13px; font-weight: 600; color: #e67e22; display: none;"></span>
                 </div>
             </form>
         </div>
 
-        <!-- 平面圖：圈選有效區域 或 選擇要合併的儲存格 -->
+        <!-- 平面圖：圈選有效區域 或 選擇要合併的網格 -->
         <div class="floorplan-preview-section">
             <div class="floorplan-preview-title">
                 {{ _('樓層平面圖') }}（{{ floor.floor_code }}）
@@ -755,7 +785,14 @@
             <div class="floorplan-mode-bar" role="group" aria-label="{{ _('平面圖操作模式') }}">
                 <span class="floorplan-mode-label">{{ _('操作模式：') }}</span>
                 <button type="button" class="mode-btn active" data-mode="active" id="mode-active" aria-pressed="true">{{ _('圈選有效區域') }}</button>
-                <button type="button" class="mode-btn" data-mode="merge" id="mode-merge" aria-pressed="false">{{ _('選擇要合併的儲存格') }}</button>
+                <button type="button" class="mode-btn" data-mode="merge" id="mode-merge" aria-pressed="false">{{ _('選擇要合併的網格') }}</button>
+            </div>
+            <div class="floorplan-zoom-bar" aria-label="{{ _('平面圖縮放') }}">
+                <button type="button" class="zoom-btn" id="zoom-in">＋</button>
+                <button type="button" class="zoom-btn" id="zoom-out">－</button>
+                <button type="button" class="zoom-btn" id="zoom-reset">{{ _('重置') }}</button>
+                <span class="floorplan-zoom-label" id="floorplanZoomLabel">100%</span>
+                <span class="preview-help-text" style="margin:0;">{{ _('滑鼠滾輪可縮放，拖曳可移動') }}</span>
             </div>
             <div class="floorplan-preview-container" id="floorplanContainer">
                 <div id="floorplanStage" class="floorplan-stage">
@@ -778,7 +815,7 @@
         </div>
 
         <div style="margin-top: 24px;">
-            <button type="button" class="advanced-toggle" id="advancedToggle" aria-expanded="false">{{ _('進階：顯示／編輯所有儲存格') }}</button>
+            <button type="button" class="advanced-toggle" id="advancedToggle" aria-expanded="false">{{ _('進階：顯示／編輯所有網格') }}</button>
             <div class="advanced-section" id="advancedSection" style="display: none;">
                 <form id="cells-form" method="POST" action="{{ url_for('admin.cells_management', exhibition_public_id=exhibition.public_id, floor_code=floor.floor_code) }}">
                     <div class="cells-table-container">
@@ -884,12 +921,59 @@
             }
         }
 
-        // 平面圖模式：'active' = 圈選有效區域，'merge' = 選擇要合併的儲存格
+        // 平面圖模式：'active' = 圈選有效區域，'merge' = 選擇要合併的網格
         let planMode = 'active';
         let mergeSelectionSet = new Set();
 
+        // 縮放與平移
+        let fpScale = 1;
+        let fpTx = 0;
+        let fpTy = 0;
+        let fpDragging = false;
+        let fpLastX = 0;
+        let fpLastY = 0;
+        let fpMoved = false;
+
+        function clamp(n, min, max) {
+            return Math.max(min, Math.min(max, n));
+        }
+
+        function applyFloorplanTransform() {
+            const stage = document.getElementById('floorplanStage');
+            const label = document.getElementById('floorplanZoomLabel');
+            if (!stage) return;
+            stage.style.transform = `translate(${fpTx}px, ${fpTy}px) scale(${fpScale})`;
+            if (label) label.textContent = Math.round(fpScale * 100) + '%';
+        }
+
+        function floorplanZoomIn() {
+            fpScale = clamp(fpScale * 1.1, 0.4, 4);
+            applyFloorplanTransform();
+        }
+
+        function floorplanZoomOut() {
+            fpScale = clamp(fpScale / 1.1, 0.4, 4);
+            applyFloorplanTransform();
+        }
+
+        function floorplanResetView() {
+            const container = document.getElementById('floorplanContainer');
+            const img = document.getElementById('floorplanImage');
+            fpScale = 1;
+            fpTx = 0;
+            fpTy = 0;
+            if (container && img) {
+                const cRect = container.getBoundingClientRect();
+                const imgWidth = img.offsetWidth || cRect.width;
+                const imgHeight = img.offsetHeight || cRect.height;
+                fpTx = imgWidth < cRect.width ? (cRect.width - imgWidth) / 2 : 0;
+                fpTy = imgHeight < cRect.height ? (cRect.height - imgHeight) / 2 : 0;
+            }
+            applyFloorplanTransform();
+        }
+
         const modeActiveText = "{{ _('圈選有效區域：點擊格子可切換啟用/停用。') }}";
-        const modeMergeText = "{{ _('選擇要合併的儲存格：點擊有效格子可加入/取消選取（橘色為已選），再輸入區域名稱並按「合併」。') }}";
+        const modeMergeText = "{{ _('選擇要合併的網格：點擊有效格子可加入/取消選取（橘色為已選），再輸入區域名稱並按「合併」。') }}";
 
         function updateMergeSelectionUI() {
             const hint = document.getElementById('merge-selection-hint');
@@ -909,6 +993,8 @@
         function renderPreviewGrid() {
             const img = document.getElementById('floorplanImage');
             const svg = document.getElementById('cellGrid');
+            const overlay = document.querySelector('.floorplan-overlay');
+            const stage = document.getElementById('floorplanStage');
             if (!img || !svg) return;
 
             if (!img.complete || img.naturalWidth === 0) return;
@@ -920,6 +1006,16 @@
             svg.setAttribute('viewBox', `0 0 ${displayWidth} ${displayHeight}`);
             svg.setAttribute('width', displayWidth);
             svg.setAttribute('height', displayHeight);
+            svg.style.width = displayWidth + 'px';
+            svg.style.height = displayHeight + 'px';
+            if (overlay) {
+                overlay.style.width = displayWidth + 'px';
+                overlay.style.height = displayHeight + 'px';
+            }
+            if (stage) {
+                stage.style.width = displayWidth + 'px';
+                stage.style.height = displayHeight + 'px';
+            }
             svg.innerHTML = '';
 
             const totalCols = Math.floor(floorData.width / floorData.gridSize) || 1;
@@ -984,6 +1080,7 @@
                 rect.addEventListener('click', function (e) {
                     e.preventDefault();
                     e.stopPropagation();
+                    if (fpMoved) return;
                     if (planMode === 'merge') {
                         if (!cell.is_active) return;
                         if (mergeSelectionSet.has(cell.id)) {
@@ -1113,6 +1210,82 @@
             });
         }
 
+        (function initFloorplanPanZoom() {
+            const container = document.getElementById('floorplanContainer');
+            const stage = document.getElementById('floorplanStage');
+            if (!container || !stage) return;
+
+            container.style.touchAction = 'none';
+
+            container.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const prevScale = fpScale;
+                const step = 1.05;
+                const nextScale = clamp(e.deltaY > 0 ? fpScale / step : fpScale * step, 0.4, 4);
+                if (nextScale === prevScale) return;
+
+                const rect = container.getBoundingClientRect();
+                const cx = e.clientX - rect.left;
+                const cy = e.clientY - rect.top;
+                const sx = (cx - fpTx) / prevScale;
+                const sy = (cy - fpTy) / prevScale;
+                fpScale = nextScale;
+                fpTx = cx - sx * fpScale;
+                fpTy = cy - sy * fpScale;
+                applyFloorplanTransform();
+            }, { passive: false });
+
+            stage.addEventListener('pointerdown', (e) => {
+                // 如果點到格子，保留原本的點擊/合併行為，不進入拖曳
+                const t = e.target;
+                if (t && t.tagName && t.tagName.toLowerCase() === 'rect') {
+                    fpDragging = false;
+                    fpMoved = false;
+                    return;
+                }
+                fpDragging = true;
+                fpMoved = false;
+                fpLastX = e.clientX;
+                fpLastY = e.clientY;
+                stage.setPointerCapture?.(e.pointerId);
+            });
+
+            stage.addEventListener('pointermove', (e) => {
+                if (!fpDragging) return;
+                const dx = e.clientX - fpLastX;
+                const dy = e.clientY - fpLastY;
+                fpLastX = e.clientX;
+                fpLastY = e.clientY;
+                if (Math.abs(dx) + Math.abs(dy) > 5) fpMoved = true;
+                fpTx += dx;
+                fpTy += dy;
+                applyFloorplanTransform();
+                e.preventDefault();
+            }, { passive: false });
+
+            stage.addEventListener('pointerup', (e) => {
+                fpDragging = false;
+                stage.releasePointerCapture?.(e.pointerId);
+                setTimeout(() => { fpMoved = false; }, 0);
+            });
+
+            stage.addEventListener('pointercancel', (e) => {
+                fpDragging = false;
+                stage.releasePointerCapture?.(e.pointerId);
+                setTimeout(() => { fpMoved = false; }, 0);
+            });
+
+            document.getElementById('zoom-in')?.addEventListener('click', floorplanZoomIn);
+            document.getElementById('zoom-out')?.addEventListener('click', floorplanZoomOut);
+            document.getElementById('zoom-reset')?.addEventListener('click', floorplanResetView);
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', floorplanResetView);
+            } else {
+                floorplanResetView();
+            }
+        })();
+
         function toggleCellActive(cellId) {
             // 1) 更新記憶體資料
             const cell = cellsData.find(c => c.id === cellId);
@@ -1154,7 +1327,7 @@
             });
         })();
 
-        // 模式切換（圈選有效區域 / 選擇要合併的儲存格）- 用 id 綁定確保按鈕一定有反應
+        // 模式切換（圈選有效區域 / 選擇要合併的網格）- 用 id 綁定確保按鈕一定有反應
         function bindModeButtons() {
             const btnActive = document.getElementById('mode-active');
             const btnMerge = document.getElementById('mode-merge');
@@ -1196,7 +1369,7 @@
                 return;
             }
             if (mergeSelectionSet.size === 0) {
-                alert("{{ _('請先在平面圖上點選要合併的格子（切換為「選擇要合併的儲存格」後點選）。') }}");
+                alert("{{ _('請先在平面圖上點選要合併的格子（切換為「選擇要合併的網格」後點選）。') }}");
                 return;
             }
             const container = document.getElementById('merge_cell_ids_container');
@@ -1231,6 +1404,7 @@
         const floorplanImg = document.getElementById('floorplanImage');
         if (floorplanImg) {
             floorplanImg.addEventListener('load', function() {
+                floorplanResetView();
                 setTimeout(function() {
                     renderOCRTextMarkers();
                 }, 100);

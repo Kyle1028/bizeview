@@ -1,4 +1,4 @@
-"""
+﻿"""
 主程式檔案：處理照片/影片上傳、人臉偵測、隱私處理
 """
 import json
@@ -14,6 +14,7 @@ from flask_login import login_required, current_user
 from flask_babel import Babel, gettext as _, lazy_gettext
 
 from sqlalchemy import or_, and_
+from sqlalchemy.orm import selectinload
 from core.auth import init_auth  # 認證系統
 from core.models import (
     db,
@@ -26,6 +27,7 @@ from core.models import (
     ExhibitionMergedRegion,
     _media_id_from_seq,
     _refresh_media_id_suffix,
+    media_cells,
 )  # 資料庫模型
 from core.media_processor import MediaProcessor  # 媒體處理模組
 
@@ -1128,22 +1130,45 @@ def index():
 @app.route("/exhibition/<exhibition_public_id>")
 def exhibition_detail(exhibition_public_id):
     """
-    展覽詳情頁面（對外使用 public_id，不可猜）
-    顯示展覽的詳細資訊和所有照片
+    ??????
     """
     exhibition = Exhibition.query.filter_by(public_id=exhibition_public_id).first_or_404()
     
-    # 檢查展覽是否公開
+    # ??????????
     if not exhibition.is_published:
-        # 只有展覽創建者或管理員可以查看未公開的展覽
         if not current_user.is_authenticated or not current_user.can_manage_exhibition(exhibition):
-            abort(403, "此展覽尚未公開")
+            abort(403, "???????")
     
-    # 取得展覽的所有照片，按顯示順序排列
+    # ?????????????????
     all_photos = ExhibitionPhoto.query.filter_by(exhibition_id=exhibition.id).order_by(ExhibitionPhoto.display_order).all()
     
-    # 過濾掉檔案不存在的照片
+    # ???? Media ? cells???????????
+    media_by_key = {}
+    def _norm_path(p: str) -> str:
+        return (p or "").replace("\\", "/")
+    try:
+        media_list = (
+            Media.query.filter_by(exhibition_id=exhibition.id)
+            .options(selectinload(Media.cells).selectinload(ExhibitionCell.merged_region))
+            .all()
+        )
+        for media in media_list:
+            keys = set()
+            if media.upload_path:
+                keys.add(_norm_path(media.upload_path))
+                keys.add(Path(media.upload_path).name)
+            if media.output_path:
+                keys.add(_norm_path(media.output_path))
+                keys.add(Path(media.output_path).name)
+            for key in keys:
+                if key:
+                    media_by_key.setdefault(key, []).append(media)
+    except Exception:
+        media_by_key = {}
+    
+    # ???????????
     photos = []
+    missing_photo_ids = []
     for photo in all_photos:
         photo_path = Path(photo.photo_path)
         if photo_path.is_absolute():
@@ -1151,67 +1176,68 @@ def exhibition_detail(exhibition_public_id):
         else:
             full_path = BASE_DIR / photo_path
         
-        # 如果檔案存在，才加入列表
         if full_path.exists():
-            # 卡片上只顯示合併區名稱，不顯示個別儲存格編號
+            # ???????????
             photo.merged_region_names = []
-            
-            # 嘗試找出對應的 Media 記錄，以便顯示此照片所屬的合併區名稱
             try:
-                photo_filename = full_path.name
-                linked_media = Media.query.filter(
-                    (Media.upload_path.like(f"%{photo_filename}")) |
-                    (Media.output_path.like(f"%{photo_filename}")) |
-                    (Media.upload_path == str(photo.photo_path)) |
-                    (Media.upload_path == str(full_path)) |
-                    (Media.output_path == str(photo.photo_path)) |
-                    (Media.output_path == str(full_path))
-                ).first()
-                
-                if linked_media and linked_media.cells:
+                photo_keys = {
+                    _norm_path(str(photo.photo_path)),
+                    _norm_path(str(full_path)),
+                    full_path.name,
+                }
+                linked_media = []
+                for key in photo_keys:
+                    linked_media.extend(media_by_key.get(key, []))
+                if linked_media:
                     region_names = set()
-                    for cell in linked_media.cells:
-                        if cell.merged_region_id and getattr(cell, "merged_region", None):
-                            name = (cell.merged_region.name or "").strip()
-                            if name:
-                                region_names.add(name)
+                    for media in set(linked_media):
+                        for cell in getattr(media, "cells", []) or []:
+                            if cell.merged_region_id and getattr(cell, "merged_region", None):
+                                name = (cell.merged_region.name or "").strip()
+                                if name:
+                                    region_names.add(name)
                     photo.merged_region_names = sorted(region_names)
             except Exception:
                 photo.merged_region_names = []
-            
             photos.append(photo)
         else:
-            # 檔案不存在，自動刪除資料庫記錄
-            try:
-                db.session.delete(photo)
-            except Exception:
-                pass  # 如果刪除失敗，忽略錯誤
+            missing_photo_ids.append(photo.id)
     
-    # 提交刪除操作
-    if len(photos) < len(all_photos):
+    if missing_photo_ids:
         try:
+            ExhibitionPhoto.query.filter(ExhibitionPhoto.id.in_(missing_photo_ids)).delete(synchronize_session=False)
             db.session.commit()
         except Exception:
             db.session.rollback()
     
-    # 載入樓層資訊（如果有）
+    # ???????????
     floors = list(exhibition.floors)
     floors.sort(key=lambda f: f.floor_code)
     
-    # 預設顯示第一個樓層（或由參數指定）
     selected_floor_code = request.args.get("floor", floors[0].floor_code if floors else None)
     selected_floor = None
     cells = []
     
-    cell_groups = []  # 依合併區分組，展覽頁依區塊顯示
-    merged_regions_for_plan = []  # 供平面圖繪製合併區名稱（僅含合併區）
+    cell_groups = []
+    merged_regions_for_plan = []
     if floors and selected_floor_code:
         selected_floor = next((f for f in floors if f.floor_code == selected_floor_code), floors[0])
         if selected_floor:
-            # 只獲取有效的網格（is_active=True）
             _cells = [c for c in selected_floor.cells if c.is_active]
             _cells.sort(key=lambda c: (c.row, c.col))
-            # 轉成可 JSON 序列化的 dict（供 template |tojson 使用）
+            
+            cell_media_counts = {}
+            try:
+                cell_media_counts = dict(
+                    db.session.query(media_cells.c.cell_id, db.func.count(media_cells.c.media_id))
+                    .join(ExhibitionCell, ExhibitionCell.id == media_cells.c.cell_id)
+                    .filter(ExhibitionCell.floor_id == selected_floor.id)
+                    .group_by(media_cells.c.cell_id)
+                    .all()
+                )
+            except Exception:
+                cell_media_counts = {}
+            
             def _cell_dict(c):
                 return {
                     "id": c.id,
@@ -1220,11 +1246,11 @@ def exhibition_detail(exhibition_public_id):
                     "col": c.col,
                     "name": c.name,
                     "is_active": bool(c.is_active),
-                    "media_count": len(getattr(c, "media_files", []) or []),
+                    "media_count": cell_media_counts.get(c.id, 0),
                     "merged_region_id": getattr(c, "merged_region_id", None),
                 }
             cells = [_cell_dict(c) for c in _cells]
-            # 依合併區分組：先各合併區（依 display_order），再「未分區」
+            
             merged_regions = list(getattr(selected_floor, "merged_regions", []) or [])
             merged_regions.sort(key=lambda r: (r.display_order, r.id))
             for mr in merged_regions:
@@ -1244,7 +1270,6 @@ def exhibition_detail(exhibition_public_id):
                     "region_id": None,
                     "cells": [_cell_dict(c) for c in unmerged],
                 })
-            # 供平面圖繪製合併區名稱（僅含合併區，每區 name + cells 的 row,col）
             merged_regions_for_plan = [
                 {"name": g["region_name"], "cells": [{"row": c["row"], "col": c["col"]} for c in g["cells"]]}
                 for g in cell_groups if g.get("region_name")
@@ -1262,7 +1287,6 @@ def exhibition_detail(exhibition_public_id):
         cell_groups=cell_groups,
         merged_regions_for_plan=merged_regions_for_plan,
     )
-
 
 @app.route("/exhibition/<exhibition_public_id>/cover")
 def exhibition_cover(exhibition_public_id):

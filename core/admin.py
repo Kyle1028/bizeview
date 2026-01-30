@@ -1094,7 +1094,7 @@ def cells_management(exhibition_public_id, floor_code):
                     db.session.rollback()
                     flash((_("建立合併區失敗：%(error)s") % {"error": str(e)}), "error")
             else:
-                flash(_("請輸入區域名稱並至少選擇一個儲存格"), "warning")
+                flash(_("請輸入區域名稱並至少選擇一個網格"), "warning")
             return redirect(url_for("admin.cells_management", exhibition_public_id=exhibition.public_id, floor_code=floor_code))
         if action == "update":
             region_id = request.form.get("merge_region_id")
